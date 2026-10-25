@@ -106,11 +106,11 @@ LearnGlyphs.Enable = 1
 #
 #    DualSpec.Enable
 #        Description: Gives the character the ability to use Dual Specialization, allowing them to switch between two different talent specs.
-#        Default:     1 - Enabled
-#                     0 - Disabled
+#        Default:     0 - Disabled
+#                     1 - Enabled
 #
 
-DualSpec.Enable = 1
+DualSpec.Enable = 0
 
 #
 #    DestroyGear.Enable

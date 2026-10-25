@@ -1200,7 +1200,7 @@ public:
         sLevelBoost->starterBagItem = sConfigMgr->GetOption<uint32>("Bags.Item", 4240);
         sLevelBoost->starterBagCount = sConfigMgr->GetOption<uint32>("Bags.Count", 4);
         sLevelBoost->oneTimeOnly = sConfigMgr->GetOption<bool>("LevelBoost.OneTimeOnly", true);
-        sLevelBoost->dualSpec = sConfigMgr->GetOption<bool>("DualSpec.Enable", true);
+        sLevelBoost->dualSpec = sConfigMgr->GetOption<bool>("DualSpec.Enable", false);
         sLevelBoost->learnSpells = sConfigMgr->GetOption<bool>("LearnSpells.Enable", true);
         sLevelBoost->LearnProficiencies = sConfigMgr->GetOption<bool>("LearnProficiencies.Enable", true);
         sLevelBoost->learnTalents = sConfigMgr->GetOption<bool>("LearnTalents.Enable", true);
