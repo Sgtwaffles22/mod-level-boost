@@ -2,6 +2,7 @@
 #include "DBCStores.h"
 #include "QuestDef.h"
 #include <algorithm>
+#include <limits>
 
 namespace
 {
@@ -138,8 +139,10 @@ ItemTemplate const* FindGearAlternative(Player* player, ItemTemplate const* orig
             HasProfessionSkillRequirement(&candidate) ||
             candidate.RequiredLevel > player->GetLevel() || candidate.ItemLevel > 22 ||
             candidate.Quality < 1 || candidate.Quality > 2 ||
-            (candidate.AllowableClass != -1 && (candidate.AllowableClass & player->getClassMask()) == 0) ||
-            (candidate.AllowableRace != -1 && (candidate.AllowableRace & player->getRaceMask()) == 0) ||
+            (candidate.AllowableClass != std::numeric_limits<uint32>::max() &&
+                (candidate.AllowableClass & player->getClassMask()) == 0) ||
+            (candidate.AllowableRace != std::numeric_limits<uint32>::max() &&
+                (candidate.AllowableRace & player->getRaceMask()) == 0) ||
             (candidate.HasFlag2(ITEM_FLAG2_FACTION_HORDE) && player->GetTeamId(true) != TEAM_HORDE) ||
             (candidate.HasFlag2(ITEM_FLAG2_FACTION_ALLIANCE) && player->GetTeamId(true) != TEAM_ALLIANCE))
             continue;
