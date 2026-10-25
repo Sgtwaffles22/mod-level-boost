@@ -110,7 +110,7 @@ LearnGlyphs.Enable = 1
 #                     0 - Disabled
 #
 
-DualSpec.Enable = 0
+DualSpec.Enable = 1
 
 #
 #    DestroyGear.Enable
@@ -119,4 +119,4 @@ DualSpec.Enable = 0
 #                     0 - Disabled
 #
 
-DestroyGear.Enable = 0
+DestroyGear.Enable = 1
