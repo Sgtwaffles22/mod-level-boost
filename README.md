@@ -4,16 +4,12 @@ Level Boost is an AzerothCore module that lets a level-1 character choose a spec
 
 ## Installation
 
-Place this module in your AzerothCore checkout's `modules` directory and build AzerothCore. After importing the core world database, apply the SQL files in `data/sql/db-world/base/` to your world database, then start or restart the server. The gear seed reads from the core's `item_template` table.
+Place this module in your AzerothCore checkout's `modules` directory and build AzerothCore with the module enabled. When the server starts with AzerothCore's database updater enabled, it automatically discovers and applies this module's SQL files. No manual SQL import is needed. The gear seed reads from the core's `item_template` table, so the core world database must already be installed.
 
-- `class_spells_table.sql` and `class_proficiencies_table.sql` create the spell and proficiency data used by the boost.
-- `gear_template_table.sql`, `talent_template_table.sql`, and `glyph_template_table.sql` create and seed the starter builds.
-- `level_boost_npc.sql` attaches the module script and dialogue to the supported starting NPCs.
-- `command.sql` registers the `.levelboost reload` command.
+- SQL in `data/sql/db-world/` creates and seeds the spell, proficiency, gear, talent, and glyph templates; configures the supported starting NPCs; and registers the `.levelboost reload` command.
+- SQL in `data/sql/db-characters/` creates the claim table used when `LevelBoost.OneTimeOnly = 1`.
 
-If `LevelBoost.OneTimeOnly = 1`, also apply `data/sql/db-characters/base/level_boost_claim.sql` to your characters database.
-
-The gear, talent, glyph, spell, and proficiency seed scripts drop and recreate their template tables. Running them again replaces any custom or extracted data in those tables.
+The database updater tracks applied SQL. Several template seed files drop and recreate their tables, so editing an already-applied seed file can cause custom or extracted template data to be replaced when the updater reapplies it.
 
 ## Configuration
 
