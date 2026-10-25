@@ -442,9 +442,62 @@ void LevelBoost::ApplyGlyphTemplate(Player* player, std::string const& playerSpe
         return;
 
     std::string const playerClass = GetClassString(player);
+    uint32 const unlockedGlyphSlots = player->GetUInt32Value(PLAYER_GLYPHS_ENABLED);
     for (GlyphTemplate const& glyphTemplate : glyphTemplateList)
-        if (playerClass == glyphTemplate.player_class && playerSpec == glyphTemplate.player_spec)
-            player->SetGlyph(glyphTemplate.glyph_slot, glyphTemplate.glyph_id, true);
+    {
+        if (playerClass != glyphTemplate.player_class || playerSpec != glyphTemplate.player_spec)
+            continue;
+
+        GlyphPropertiesEntry const* glyph = sGlyphPropertiesStore.LookupEntry(glyphTemplate.glyph_id);
+        if (!glyph || !glyph->SpellId)
+        {
+            LOG_WARN("module", "Skipping invalid glyph template entry {} for {} / {}.",
+                glyphTemplate.glyph_id, playerClass, playerSpec);
+            continue;
+        }
+
+        auto isCompatibleUnlockedSlot = [player, unlockedGlyphSlots, glyph](uint8 slot)
+        {
+            if (slot >= MAX_GLYPH_SLOT_INDEX || !(unlockedGlyphSlots & (1u << slot)))
+                return false;
+
+            GlyphSlotEntry const* glyphSlot = sGlyphSlotStore.LookupEntry(player->GetGlyphSlot(slot));
+            return glyphSlot && glyphSlot->TypeFlags == glyph->TypeFlags;
+        };
+
+        uint8 selectedSlot = glyphTemplate.glyph_slot;
+        if (!isCompatibleUnlockedSlot(selectedSlot))
+        {
+            selectedSlot = MAX_GLYPH_SLOT_INDEX;
+            for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
+                if (isCompatibleUnlockedSlot(slot))
+                {
+                    selectedSlot = slot;
+                    break;
+                }
+        }
+
+        if (selectedSlot >= MAX_GLYPH_SLOT_INDEX)
+        {
+            LOG_WARN("module", "No unlocked compatible glyph slot for glyph {} ({}) for {} / {} at level {}.",
+                glyphTemplate.glyph_id, glyph->SpellId, playerClass, playerSpec, player->GetLevel());
+            continue;
+        }
+
+        if (uint32 oldGlyphId = player->GetGlyph(selectedSlot); oldGlyphId && oldGlyphId != glyphTemplate.glyph_id)
+            if (GlyphPropertiesEntry const* oldGlyph = sGlyphPropertiesStore.LookupEntry(oldGlyphId))
+            {
+                player->RemoveAurasDueToSpell(oldGlyph->SpellId);
+                player->SendLearnPacket(oldGlyph->SpellId, false);
+            }
+
+        player->SendLearnPacket(glyph->SpellId, true);
+        player->CastSpell(player, glyph->SpellId,
+            TriggerCastFlags(TRIGGERED_FULL_MASK & ~(TRIGGERED_IGNORE_SHAPESHIFT | TRIGGERED_IGNORE_CASTER_AURASTATE)));
+        player->SetGlyph(selectedSlot, glyphTemplate.glyph_id, true);
+        LOG_INFO("module", "Applied glyph {} to slot {} for {} / {}.",
+            glyphTemplate.glyph_id, selectedSlot, playerClass, playerSpec);
+    }
 }
 
 
