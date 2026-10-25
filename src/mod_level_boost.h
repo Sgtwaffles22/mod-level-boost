@@ -24,11 +24,13 @@
 const int ARROW_COUNT = 1000;
 const int BULLET_COUNT = 1000;
 const int BOOST_TEXT = 70000;
+const int BOOST_CONFIRM_TEXT = 70001;
+const uint32 GOSSIP_CONFIRM_BOOST_BASE = 200;
 
 enum GossipId
 {
     GOSSIP_MAIN_MENU = 0,
-    GOSSIP_LEVEL_15_BOOST = 1,
+    GOSSIP_LEVEL_BOOST = 1,
     GOSSIP_GEAR = 100,
     GOSSIP_RESET_TALENTS = 999
 };
@@ -37,6 +39,28 @@ enum Spells
 {
     TALENT_SPECIALIZATION_SWITCHES = 63680,
     SECOND_TALENT_SPECIALIZATION = 63624
+};
+
+struct PlannedQuestReward
+{
+    uint32 item_id;
+    uint32 count;
+};
+
+struct PlannedClassQuest
+{
+    Quest const* quest;
+    std::vector<PlannedQuestReward> rewards;
+};
+
+struct ClassQuestPlan
+{
+    std::vector<PlannedClassQuest> quests;
+    std::vector<Quest const*> unsupportedRewardQuests;
+    std::vector<Quest const*> invalidRewardQuests;
+    std::vector<Quest const*> unavailableChoiceRewardQuests;
+    uint32 rewardItemEntries = 0;
+    uint32 choiceRewardsSkipped = 0;
 };
 
 struct ClassSpells
@@ -99,27 +123,37 @@ public:
     TalentTemplateContainer talentTemplateList;
     GlyphTemplateContainer glyphTemplateList;
 
-    bool levelBoost, dualSpec, learnSpells, LearnProficiencies, learnTalents, learnGlyphs, destroyGear;
-    std::string player_spec;
+    bool levelBoost, oneTimeOnly, dualSpec, learnSpells, LearnProficiencies, learnTalents, learnGlyphs, destroyGear, completeClassQuests, giveBags;
+    uint32 boostLevel = 15;
+    uint32 startingGold = 100;
+    uint32 starterBagItem = 4240;
+    uint32 starterBagCount = 4;
 
     void LoadTalentContainer();
     void LoadGlyphContainer();
     void LoadGearContainer();
     void LoadSpellContainer();
     void LoadProficiencyContainer();
+    uint32 GetTargetLevel() const;
+    uint32 GetMoneyToGrant(Player* player) const;
+    bool HasBoostClaim(Player* player);
+    void RecordBoostClaim(Player* player, uint32 targetLevel);
+    ClassQuestPlan BuildClassQuestPlan(Player* player, uint32 targetLevel) const;
+    void CompleteClassQuests(Player* player, ClassQuestPlan const& plan);
     void LearnDualSpec(Player* player);
     void DestroyGear(Player* player);
     void DestroyProjectiles(Player* player);
     void AddClassItems(Player* player);
+    void AddStarterBags(Player* player);
     void LearnSpellsForLevel(Player* player);
     void LearnProficienciesForLevel(Player* Player);
-    void HandleBoost(Player* player, Creature* creature);
+    void HandleBoost(Player* player, Creature* creature, std::string const& playerSpec);
     void CreateHunterPet(Player* player, Creature* creature, uint32 entry);
-    bool TemplateExists(Player* player);
-    bool ApplyFullTemplate(Player* player, std::string player_spec);
-    void ApplyGearTemplate(Player* player);
-    void ApplyTalentTemplate(Player* player);
-    void ApplyGlyphTemplate(Player* player);
+    bool TemplateExists(Player* player, std::string const& playerSpec);
+    bool ApplyFullTemplate(Player* player, std::string const& playerSpec);
+    void ApplyGearTemplate(Player* player, std::string const& playerSpec);
+    void ApplyTalentTemplate(Player* player, std::string const& playerSpec);
+    void ApplyGlyphTemplate(Player* player, std::string const& playerSpec);
     void ExtractTemplates(Player* player, std::string player_spec);
     void ExtractGearTemplate(Player* player, std::string player_spec);
     void ExtractTalentTemplate(Player* player, std::string player_spec);

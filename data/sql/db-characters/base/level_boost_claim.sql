@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS mod_level_boost_claim (
+    guid INT UNSIGNED NOT NULL,
+    boosted_level TINYINT UNSIGNED NOT NULL,
+    claim_time INT UNSIGNED NOT NULL,
+    PRIMARY KEY (guid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

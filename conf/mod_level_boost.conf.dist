@@ -1,16 +1,70 @@
 [worldserver]
 
 ########################################
-# Level 15 Boost
+# Level Boost
 ########################################
 #
 #    LevelBoost.Enable
-#        Description: Toggles the Level 15 Boost feature. When enabled, players can receive an automatic boost to level 15 at their race's starting quest giver.
+#        Description: Toggles the Level Boost feature. When enabled, players can receive an automatic boost to the configured level at their race's starting quest giver.
 #        Default:     1 - Enabled
 #                     0 - Disabled
 #
 
 LevelBoost.Enable = 1
+
+# LevelBoost.OneTimeOnly
+# Prevents a character from claiming the boost more than once. Requires the character SQL table.
+# Default: 1
+LevelBoost.OneTimeOnly = 1
+
+#
+#    LevelBoost.Level
+#        Description: Target level granted by the boost. Set this between 1 and MaxPlayerLevel.
+#        Default:     15
+#
+
+LevelBoost.Level = 15
+
+#
+#    LevelBoost.Gold
+#        Description: Whole gold granted when the boost is applied (1 gold = 10,000 copper). Set to 0 for none; the grant is capped by the core's money limit.
+#        Default:     100 (100 gold)
+#
+
+LevelBoost.Gold = 100
+
+#    Bags.Enable
+#        Description: Gives the boosted character starter bags in empty bag slots.
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+
+Bags.Enable = 1
+
+#    Bags.Item
+#        Description: item_template entry for the normal bag to grant. Default 4240 is an 8-slot Woolen Bag.
+#        Default:     4240
+#
+
+Bags.Item = 4240
+
+#    Bags.Count
+#        Description: Number of bags to grant. The value is clamped to the four character bag slots.
+#        Default:     4
+#
+
+Bags.Count = 4
+
+#
+#    ClassQuests.Enable
+#        Description: Marks eligible class quests as rewarded and grants item rewards. If no choice item is usable,
+#                     or a quest has unsupported non-item rewards, it is left incomplete and shown in the preview.
+#                     Quest XP and money are not granted.
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+
+ClassQuests.Enable = 1
 
 #
 #    LearnSpells.Enable
@@ -37,7 +91,7 @@ LearnProficiencies.Enable = 1
 #                     0 - Disabled
 #
 
-LearnTalents.Enable = 0
+LearnTalents.Enable = 1
 
 #
 #    LearnGlyphs.Enable

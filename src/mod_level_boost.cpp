@@ -1,7 +1,135 @@
 #include "mod_level_boost.h"
+#include "DBCStores.h"
+#include "QuestDef.h"
+#include <algorithm>
+
+namespace
+{
+struct SpecializationOption
+{
+    uint8 id;
+    uint8 classId;
+    char const* className;
+    char const* specName;
+};
+
+SpecializationOption const SpecializationOptions[] =
+{
+    { 1, CLASS_WARRIOR, "Warrior", "Arms" },
+    { 2, CLASS_WARRIOR, "Warrior", "Fury" },
+    { 3, CLASS_WARRIOR, "Warrior", "Protection" },
+    { 4, CLASS_ROGUE, "Rogue", "Assassination" },
+    { 5, CLASS_ROGUE, "Rogue", "Combat" },
+    { 6, CLASS_ROGUE, "Rogue", "Subtlety" },
+    { 7, CLASS_SHAMAN, "Shaman", "Elemental" },
+    { 8, CLASS_SHAMAN, "Shaman", "Enhancement" },
+    { 9, CLASS_SHAMAN, "Shaman", "Restoration" },
+    { 10, CLASS_HUNTER, "Hunter", "Beast Mastery" },
+    { 11, CLASS_HUNTER, "Hunter", "Marksmanship" },
+    { 12, CLASS_HUNTER, "Hunter", "Survival" },
+    { 13, CLASS_MAGE, "Mage", "Arcane" },
+    { 14, CLASS_MAGE, "Mage", "Fire" },
+    { 15, CLASS_MAGE, "Mage", "Frost" },
+    { 16, CLASS_WARLOCK, "Warlock", "Affliction" },
+    { 17, CLASS_WARLOCK, "Warlock", "Demonology" },
+    { 18, CLASS_WARLOCK, "Warlock", "Destruction" },
+    { 19, CLASS_PALADIN, "Paladin", "Holy" },
+    { 20, CLASS_PALADIN, "Paladin", "Protection" },
+    { 21, CLASS_PALADIN, "Paladin", "Retribution" },
+    { 22, CLASS_DRUID, "Druid", "Balance" },
+    { 23, CLASS_DRUID, "Druid", "Feral" },
+    { 24, CLASS_DRUID, "Druid", "Restoration" },
+    { 25, CLASS_PRIEST, "Priest", "Discipline" },
+    { 26, CLASS_PRIEST, "Priest", "Holy" },
+    { 27, CLASS_PRIEST, "Priest", "Shadow" }
+};
+
+uint32 const SpecializationOptionCount = sizeof(SpecializationOptions) / sizeof(SpecializationOptions[0]);
+
+SpecializationOption const* FindSpecializationOption(uint32 id)
+{
+    if (id == 0 || id > SpecializationOptionCount)
+        return nullptr;
+
+    SpecializationOption const& option = SpecializationOptions[id - 1];
+    return option.id == id ? &option : nullptr;
+}
+
+uint32 GetClassMaskByName(std::string const& className)
+{
+    for (SpecializationOption const& option : SpecializationOptions)
+        if (className == option.className)
+            return 1U << (option.classId - 1);
+
+    return 0;
+}
+
+uint32 GetRaceMaskByName(std::string const& raceName)
+{
+    struct RaceName
+    {
+        char const* name;
+        uint8 raceId;
+    };
+
+    static RaceName const races[] =
+    {
+        { "Human", RACE_HUMAN },
+        { "Orc", RACE_ORC },
+        { "Dwarf", RACE_DWARF },
+        { "Nightelf", RACE_NIGHTELF },
+        { "Undead", RACE_UNDEAD_PLAYER },
+        { "Tauren", RACE_TAUREN },
+        { "Gnome", RACE_GNOME },
+        { "Troll", RACE_TROLL },
+        { "Bloodelf", RACE_BLOODELF },
+        { "Draenei", RACE_DRAENEI }
+    };
+
+    for (RaceName const& race : races)
+        if (raceName == race.name)
+            return 1U << (race.raceId - 1);
+
+    return 0;
+}
+
+bool HasUnsupportedNonItemRewards(Quest const* quest)
+{
+    if (quest->GetRewSpell() || quest->GetRewSpellCast() || quest->GetCharTitleId() ||
+        quest->GetBonusTalents() || quest->GetRewHonorAddition() ||
+        quest->GetRewHonorMultiplier() != 0.0f || quest->GetRewArenaPoints() ||
+        quest->GetRewMailTemplateId())
+        return true;
+
+    for (uint8 index = 0; index < QUEST_REPUTATIONS_COUNT; ++index)
+        if (quest->RewardFactionId[index] || quest->RewardFactionValueId[index] ||
+            quest->RewardFactionValueIdOverride[index])
+            return true;
+
+    return false;
+}
+
+bool IsChoiceItemUsableForBoost(Player* player, ItemTemplate const* itemTemplate, uint32 targetLevel)
+{
+    if (!itemTemplate || itemTemplate->RequiredLevel > targetLevel ||
+        (itemTemplate->AllowableClass & player->getClassMask()) == 0 ||
+        (itemTemplate->AllowableRace & player->getRaceMask()) == 0)
+        return false;
+
+    if (itemTemplate->HasFlag2(ITEM_FLAG2_FACTION_HORDE) && player->GetTeamId(true) != TEAM_HORDE)
+        return false;
+
+    if (itemTemplate->HasFlag2(ITEM_FLAG2_FACTION_ALLIANCE) && player->GetTeamId(true) != TEAM_ALLIANCE)
+        return false;
+
+    return true;
+}
+}
+
 
 void LevelBoost::LoadTalentContainer()
 {
+    talentTemplateList.clear();
     QueryResult result = WorldDatabase.Query("SELECT `player_class`, `player_spec`, `talent_id` FROM `mod_boost_talents`");
 
     if (!result)
@@ -9,8 +137,6 @@ void LevelBoost::LoadTalentContainer()
         LOG_WARN("server.loading", ">> Loaded 0 talent templates");
         return;
     }
-
-    talentTemplateList.clear();
 
     uint32 oldTime = getMSTime();
     uint32 count = 0;
@@ -31,6 +157,7 @@ void LevelBoost::LoadTalentContainer()
 
 void LevelBoost::LoadGlyphContainer()
 {
+    glyphTemplateList.clear();
     QueryResult result = WorldDatabase.Query("SELECT `player_class`, `player_spec`, `glyph_slot`, `glyph_id` FROM `mod_boost_glyphs`");
 
     if (!result)
@@ -38,8 +165,6 @@ void LevelBoost::LoadGlyphContainer()
         LOG_WARN("server.loading", ">> Loaded 0 glyph templates");
         return;
     }
-
-    glyphTemplateList.clear();
 
     uint32 oldTime = getMSTime();
     uint32 count = 0;
@@ -61,6 +186,7 @@ void LevelBoost::LoadGlyphContainer()
 
 void LevelBoost::LoadGearContainer()
 {
+    gearTemplateList.clear();
     QueryResult result = WorldDatabase.Query("SELECT `player_class`, `player_spec`, `player_race`, `equipment_slot`, `item_entry` FROM `mod_boost_gear`");
 
     if (!result)
@@ -68,8 +194,6 @@ void LevelBoost::LoadGearContainer()
         LOG_WARN("server.loading", ">> Loaded 0 gear templates");
         return;
     }
-
-    gearTemplateList.clear();
 
     uint32 oldTime = getMSTime();
     uint32 count = 0;
@@ -92,6 +216,7 @@ void LevelBoost::LoadGearContainer()
 
 void LevelBoost::LoadSpellContainer()
 {
+    classSpellsList.clear();
     QueryResult result = WorldDatabase.Query("SELECT `class_id`, `spell_id`, `required_level`, `required_spell_id` FROM `mod_boost_class_spells` ORDER BY `class_id`, `required_level`");
 
     if (!result)
@@ -99,8 +224,6 @@ void LevelBoost::LoadSpellContainer()
         LOG_WARN("server.loading", ">> Loaded 0 spell templates");
         return;
     }
-
-    classSpellsList.clear();
 
     uint32 oldTime = getMSTime();
     uint32 count = 0;
@@ -122,6 +245,7 @@ void LevelBoost::LoadSpellContainer()
 
 void LevelBoost::LoadProficiencyContainer()
 {
+    classProficienciesList.clear();
     QueryResult result = WorldDatabase.Query("SELECT `class_id`, `spell_id`, `required_level` FROM `mod_boost_class_proficiencies` ORDER BY `class_id`");
 
     if (!result)
@@ -129,8 +253,6 @@ void LevelBoost::LoadProficiencyContainer()
         LOG_WARN("server.loading", ">> Loaded 0 proficiency templates");
         return;
     }
-
-    classProficienciesList.clear();
 
     uint32 oldTime = getMSTime();
     uint32 count = 0;
@@ -163,28 +285,10 @@ void LevelBoost::DestroyGear(Player* player)
     if (!destroyGear)
         return;
 
-    for (uint8 i = EQUIPMENT_SLOT_START; i < EQUIPMENT_SLOT_END; ++i)
+    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
     {
-        if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, i))
-        {
-            player->DestroyItemCount(item->GetEntry(), 1, true, true);
-
-            if (item)
-            {
-                player->DestroyItemCount(item->GetEntry(), 1, true, true);
-
-                if (item->IsInWorld())
-                {
-                    item->RemoveFromWorld();
-                    item->DestroyForPlayer(player);
-                }
-
-                item->SetUInt32Value(ITEM_FIELD_CONTAINED, 0);
-                item->SetSlot(NULL_SLOT);
-                item->SetState(ITEM_REMOVED, player);
-
-            }
-        }
+        if (player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            player->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
     }
 }
 
@@ -215,6 +319,46 @@ void LevelBoost::AddClassItems(Player* player)
             player->AddItem(ITEM_SHAMAN_TOTEM_1, 1);
             player->AddItem(ITEM_SHAMAN_TOTEM_2, 1);
             break;
+    }
+}
+
+void LevelBoost::AddStarterBags(Player* player)
+{
+    if (!giveBags || !starterBagCount)
+        return;
+
+    ItemTemplate const* bagTemplate = sObjectMgr->GetItemTemplate(starterBagItem);
+    if (!bagTemplate || bagTemplate->InventoryType != INVTYPE_BAG || !bagTemplate->ContainerSlots ||
+        bagTemplate->ContainerSlots > MAX_BAG_SIZE)
+    {
+        LOG_ERROR("module", "Configured starter bag item {} is missing or is not a usable bag.", starterBagItem);
+        return;
+    }
+
+    uint32 const maxEquippedBags = INVENTORY_SLOT_BAG_END - INVENTORY_SLOT_BAG_START;
+    uint32 bagsRemaining = std::min(starterBagCount, maxEquippedBags);
+    if (starterBagCount > maxEquippedBags)
+        LOG_WARN("module", "Configured starter bag count {} exceeds the four character bag slots; limiting the grant to {}.", starterBagCount, maxEquippedBags);
+    for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END && bagsRemaining; ++slot)
+    {
+        if (player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            continue;
+
+        if (player->EquipNewItem(slot, starterBagItem, true))
+            --bagsRemaining;
+        else
+        {
+            player->SendItemRetrievalMail(starterBagItem, 1);
+            --bagsRemaining;
+            LOG_WARN("module", "Could not equip starter bag {} in bag slot {} for {}; sent it by mail.",
+                starterBagItem, slot, player->GetName());
+        }
+    }
+
+    while (bagsRemaining)
+    {
+        player->SendItemRetrievalMail(starterBagItem, 1);
+        --bagsRemaining;
     }
 }
 
@@ -279,7 +423,7 @@ void LevelBoost::CreateHunterPet(Player* player, Creature* creature, uint32 entr
 
     hunterPet->SetPower(POWER_HAPPINESS, 1048000);
 
-    if (!hunterPet->InitStatsForLevel(player->getLevel()))
+    if (!hunterPet->InitStatsForLevel(player->GetLevel()))
     {
         LOG_ERROR("server", "Pet Create fail: No init stats for pet with entry {}", entry);
         delete hunterPet;
@@ -297,12 +441,17 @@ void LevelBoost::CreateHunterPet(Player* player, Creature* creature, uint32 entr
 
 }
 
-void LevelBoost::HandleBoost(Player* player, Creature* creature)
+
+void LevelBoost::HandleBoost(Player* player, Creature* creature, std::string const& playerSpec)
 {
-    if (!ApplyFullTemplate(player, sLevelBoost->player_spec))
+    if (oneTimeOnly && HasBoostClaim(player))
     {
+        player->GetSession()->SendAreaTriggerMessage("This character has already claimed a level boost.");
         return;
     }
+
+    if (!ApplyFullTemplate(player, playerSpec))
+        return;
 
     switch (player->getRace())
     {
@@ -316,8 +465,6 @@ void LevelBoost::HandleBoost(Player* player, Creature* creature)
         CreateHunterPet(player, creature, 16520);
         break;
     case RACE_ORC:
-        CreateHunterPet(player, creature, 3098);
-        break;
     case RACE_TROLL:
         CreateHunterPet(player, creature, 3098);
         break;
@@ -335,6 +482,11 @@ void LevelBoost::HandleBoost(Player* player, Creature* creature)
     LearnProficienciesForLevel(player);
     AddClassItems(player);
     player->UpdateSkillsToMaxSkillsForLevel();
+
+    if (oneTimeOnly)
+        RecordBoostClaim(player, GetTargetLevel());
+
+    player->SaveToDB(false, false);
     CloseGossipMenuFor(player);
     player->SendTalentsInfoData(false);
 }
@@ -412,84 +564,324 @@ std::string LevelBoost::GetRaceString(Player* player)
     return "Unknown";
 }
 
-bool LevelBoost::TemplateExists(Player* player)
+
+uint32 LevelBoost::GetTargetLevel() const
 {
-    for (auto& gearTemplate : gearTemplateList)
+    uint32 maxPlayerLevel = sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL);
+    if (maxPlayerLevel > 255)
+        maxPlayerLevel = 255;
+    if (maxPlayerLevel == 0)
+        maxPlayerLevel = 1;
+
+    uint32 targetLevel = boostLevel;
+    if (targetLevel == 0)
+        targetLevel = 1;
+    if (targetLevel > maxPlayerLevel)
+        targetLevel = maxPlayerLevel;
+
+    return targetLevel;
+}
+
+uint32 LevelBoost::GetMoneyToGrant(Player* player) const
+{
+    uint32 goldToGrant = startingGold;
+    if (goldToGrant > 214748U)
+        goldToGrant = 214748U;
+
+    uint32 moneyToGrant = goldToGrant * 10000U;
+    uint32 currentMoney = player->GetMoney();
+    uint32 maxMoney = 2147483647U;
+    if (currentMoney >= maxMoney)
+        return 0;
+
+    if (moneyToGrant > maxMoney - currentMoney)
+        moneyToGrant = maxMoney - currentMoney;
+
+    return moneyToGrant;
+}
+
+bool LevelBoost::HasBoostClaim(Player* player)
+{
+    if (!oneTimeOnly)
+        return false;
+
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT 1 FROM mod_level_boost_claim WHERE guid = {}",
+        player->GetGUID().GetCounter());
+    return static_cast<bool>(result);
+}
+
+void LevelBoost::RecordBoostClaim(Player* player, uint32 targetLevel)
+{
+    CharacterDatabase.Execute(
+        "INSERT IGNORE INTO mod_level_boost_claim (guid, boosted_level, claim_time) VALUES ({}, {}, UNIX_TIMESTAMP())",
+        player->GetGUID().GetCounter(), targetLevel);
+}
+
+ClassQuestPlan LevelBoost::BuildClassQuestPlan(Player* player, uint32 targetLevel) const
+{
+    ClassQuestPlan plan;
+    if (!completeClassQuests)
+        return plan;
+
+    uint32 const playerClassMask = player->getClassMask();
+    uint32 const playerRaceMask = player->getRaceMask();
+
+    for (auto const& questEntry : sObjectMgr->GetQuestTemplates())
     {
-        if (GetClassString(player) == gearTemplate.player_class && sLevelBoost->player_spec == gearTemplate.player_spec)
+        Quest const* quest = questEntry.second;
+        if (!quest)
+            continue;
+
+        uint32 const requiredClasses = quest->GetRequiredClasses();
+        if (!requiredClasses || !(requiredClasses & playerClassMask))
+            continue;
+
+        if (quest->GetMinLevel() > targetLevel)
+            continue;
+
+        int32 const questLevel = quest->GetQuestLevel();
+        if (questLevel > 0 && static_cast<uint32>(questLevel) > targetLevel)
+            continue;
+
+        uint32 const allowableRaces = quest->GetAllowableRaces();
+        if (allowableRaces && !(allowableRaces & playerRaceMask))
+            continue;
+
+        if (quest->IsRepeatable() || quest->IsDailyOrWeekly() || quest->IsMonthly() ||
+            quest->IsSeasonal() || quest->IsPVPQuest() || quest->GetTimeAllowed() > 0)
+            continue;
+
+        uint32 const questId = quest->GetQuestId();
+        if (player->IsQuestRewarded(questId))
+            continue;
+
+        if (HasUnsupportedNonItemRewards(quest))
         {
-            return true;
+            plan.unsupportedRewardQuests.push_back(quest);
+            continue;
         }
+
+        PlannedClassQuest plannedQuest;
+        plannedQuest.quest = quest;
+        bool invalidReward = false;
+
+        for (uint8 rewardIndex = 0; rewardIndex < QUEST_REWARDS_COUNT; ++rewardIndex)
+        {
+            uint32 const itemId = quest->RewardItemId[rewardIndex];
+            uint32 const count = quest->RewardItemIdCount[rewardIndex];
+            if (!itemId || !count)
+                continue;
+
+            if (!sObjectMgr->GetItemTemplate(itemId))
+            {
+                invalidReward = true;
+                break;
+            }
+
+            plannedQuest.rewards.push_back({ itemId, count });
+        }
+
+        if (invalidReward)
+        {
+            plan.invalidRewardQuests.push_back(quest);
+            continue;
+        }
+
+        bool hasChoiceReward = false;
+        bool selectedChoiceReward = false;
+        for (uint8 rewardIndex = 0; rewardIndex < QUEST_REWARD_CHOICES_COUNT; ++rewardIndex)
+        {
+            uint32 const itemId = quest->RewardChoiceItemId[rewardIndex];
+            uint32 const count = quest->RewardChoiceItemCount[rewardIndex];
+            if (!itemId)
+                continue;
+
+            hasChoiceReward = true;
+            ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
+            if (!count || !IsChoiceItemUsableForBoost(player, itemTemplate, targetLevel))
+                continue;
+
+            plannedQuest.rewards.push_back({ itemId, count });
+            selectedChoiceReward = true;
+            break;
+        }
+
+        if (hasChoiceReward && !selectedChoiceReward)
+        {
+            ++plan.choiceRewardsSkipped;
+            plan.unavailableChoiceRewardQuests.push_back(quest);
+            continue;
+        }
+
+        plan.rewardItemEntries += static_cast<uint32>(plannedQuest.rewards.size());
+        plan.quests.push_back(plannedQuest);
+    }
+
+    return plan;
+}
+
+
+bool LevelBoost::TemplateExists(Player* player, std::string const& playerSpec)
+{
+    std::string const playerClass = GetClassString(player);
+    std::string const playerRace = GetRaceString(player);
+    for (GearTemplate const& gearTemplate : gearTemplateList)
+    {
+        if (playerClass == gearTemplate.player_class &&
+            playerSpec == gearTemplate.player_spec &&
+            playerRace == gearTemplate.player_race)
+            return true;
     }
 
     return false;
 }
 
-void LevelBoost::ApplyGearTemplate(Player* player)
+
+void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec)
 {
-    for (auto& gearTemplate : gearTemplateList)
+    std::string const playerClass = GetClassString(player);
+    std::string const playerRace = GetRaceString(player);
+    for (GearTemplate const& gearTemplate : gearTemplateList)
     {
-        if (GetClassString(player) == gearTemplate.player_class &&
-            sLevelBoost->player_spec == gearTemplate.player_spec &&
-            GetRaceString(player) == gearTemplate.player_race)
-        {
-            player->EquipNewItem(gearTemplate.equipment_slot, gearTemplate.item_entry, true);
-        }
+        if (playerClass != gearTemplate.player_class ||
+            playerSpec != gearTemplate.player_spec ||
+            playerRace != gearTemplate.player_race)
+            continue;
+
+        ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(gearTemplate.item_entry);
+        if (!itemTemplate || itemTemplate->RequiredLevel > player->GetLevel())
+            continue;
+
+        player->EquipNewItem(gearTemplate.equipment_slot, gearTemplate.item_entry, true);
     }
 }
 
-void LevelBoost::ApplyGlyphTemplate(Player* player)
+
+void LevelBoost::ApplyGlyphTemplate(Player* player, std::string const& playerSpec)
 {
-    if (!learnGlyphs)
+    if (!learnGlyphs || player->GetLevel() < 15)
         return;
 
-    for (auto& glyphTemplate : glyphTemplateList)
-    {
-        if (GetClassString(player) == glyphTemplate.player_class && sLevelBoost->player_spec == glyphTemplate.player_spec)
-        {
-            player->CastSpell(player, glyphTemplate.glyph_id, true);
+    std::string const playerClass = GetClassString(player);
+    for (GlyphTemplate const& glyphTemplate : glyphTemplateList)
+        if (playerClass == glyphTemplate.player_class && playerSpec == glyphTemplate.player_spec)
             player->SetGlyph(glyphTemplate.glyph_slot, glyphTemplate.glyph_id, true);
-        }
-    }
 }
 
-void LevelBoost::ApplyTalentTemplate(Player* player)
+
+void LevelBoost::ApplyTalentTemplate(Player* player, std::string const& playerSpec)
 {
     if (!learnTalents)
         return;
 
-    for (auto& talentTemplate : talentTemplateList)
+    std::string const playerClass = GetClassString(player);
+    uint32 freeTalentPoints = player->GetFreeTalentPoints();
+    for (TalentTemplate const& talentTemplate : talentTemplateList)
     {
-        if (GetClassString(player) == talentTemplate.player_class && sLevelBoost->player_spec == talentTemplate.player_spec)
-        {
-            LOG_INFO("server.worldserver", "true, class is: {}, spec is: {}, talent_id is: {}, current spec is: {}", talentTemplate.player_class, talentTemplate.player_spec, talentTemplate.talent_id, player->GetActiveSpecMask());
-            player->addTalent(talentTemplate.talent_id, player->GetActiveSpecMask(), 0);
-        }
+        if (playerClass != talentTemplate.player_class || playerSpec != talentTemplate.player_spec)
+            continue;
+
+        uint32 const talentCost = GetTalentSpellCost(talentTemplate.talent_id);
+        if (!talentCost || talentCost > freeTalentPoints)
+            continue;
+
+        if (player->addTalent(talentTemplate.talent_id, player->GetActiveSpecMask(), 0))
+            freeTalentPoints -= talentCost;
     }
-    player->SetFreeTalentPoints(0);
+
+    player->SetFreeTalentPoints(freeTalentPoints);
 }
 
-bool LevelBoost::ApplyFullTemplate(Player* player, std::string player_spec)
+
+void LevelBoost::CompleteClassQuests(Player* player, ClassQuestPlan const& plan)
 {
-    if (!sLevelBoost->TemplateExists(player))
+    for (Quest const* quest : plan.unsupportedRewardQuests)
+        LOG_WARN("module", "Leaving class quest {} ({}) incomplete because it has non-item rewards the boost does not grant.", quest->GetQuestId(), quest->GetTitle());
+
+    for (Quest const* quest : plan.invalidRewardQuests)
+        LOG_WARN("module", "Leaving class quest {} ({}) incomplete because one of its fixed item rewards is invalid.", quest->GetQuestId(), quest->GetTitle());
+
+    for (Quest const* quest : plan.unavailableChoiceRewardQuests)
+        LOG_WARN("module", "Leaving class quest {} ({}) incomplete because none of its choice rewards is usable by {}.", quest->GetQuestId(), quest->GetTitle(), player->GetName());
+
+    uint32 completedQuests = 0;
+    uint32 grantedRewardEntries = 0;
+    uint32 highestQuestLevel = 0;
+
+    for (PlannedClassQuest const& plannedQuest : plan.quests)
     {
-        player->GetSession()->SendAreaTriggerMessage("There's no templates for %s specialization yet.", player_spec.c_str());
+        Quest const* quest = plannedQuest.quest;
+        for (PlannedQuestReward const& reward : plannedQuest.rewards)
+        {
+            ItemPosCountVec destination;
+            uint32 noSpaceForCount = 0;
+            InventoryResult const storageResult = player->CanStoreNewItem(
+                NULL_BAG, NULL_SLOT, destination, reward.item_id, reward.count, &noSpaceForCount);
+            if (storageResult == EQUIP_ERR_OK && noSpaceForCount == 0)
+            {
+                if (Item* item = player->StoreNewItem(destination, reward.item_id, true))
+                {
+                    player->SendNewItem(item, reward.count, true, false);
+                    ++grantedRewardEntries;
+                    continue;
+                }
+            }
+
+            player->SendItemRetrievalMail(reward.item_id, reward.count);
+            ++grantedRewardEntries;
+            LOG_WARN("module", "Could not store class quest {} reward item {} x{} in {}'s inventory; sent it by mail.",
+                quest->GetQuestId(), reward.item_id, reward.count, player->GetName());
+        }
+
+        uint16 const questLogSlot = player->FindQuestSlot(quest->GetQuestId());
+        if (questLogSlot < MAX_QUEST_LOG_SIZE)
+            player->SetQuestSlot(questLogSlot, 0);
+
+        if (player->GetQuestStatus(quest->GetQuestId()) != QUEST_STATUS_NONE)
+            player->RemoveActiveQuest(quest->GetQuestId(), false);
+
+        player->SetRewardedQuest(quest->GetQuestId());
+        player->SendQuestUpdate(quest->GetQuestId());
+        ++completedQuests;
+
+        if (quest->GetQuestLevel() > 0)
+            highestQuestLevel = std::max(highestQuestLevel, static_cast<uint32>(quest->GetQuestLevel()));
+    }
+
+    if (completedQuests)
+        LOG_INFO("module", ">> Marked {} class quests through level {} as rewarded for {} and granted {} quest reward entries.",
+            completedQuests, highestQuestLevel, player->GetName(), grantedRewardEntries);
+}
+
+
+bool LevelBoost::ApplyFullTemplate(Player* player, std::string const& playerSpec)
+{
+    if (!TemplateExists(player, playerSpec))
+    {
+        player->GetSession()->SendAreaTriggerMessage("There's no templates for %s specialization yet.", playerSpec.c_str());
         return false;
     }
 
-    player->GiveLevel(15);
+    uint32 const targetLevel = GetTargetLevel();
+    ClassQuestPlan const questPlan = BuildClassQuestPlan(player, targetLevel);
+
+    player->GiveLevel(static_cast<uint8>(targetLevel));
     DestroyGear(player);
-    ApplyGearTemplate(player);
-    ApplyGlyphTemplate(player);
-    ApplyTalentTemplate(player);
+    ApplyGearTemplate(player, playerSpec);
+    AddStarterBags(player);
+    ApplyGlyphTemplate(player, playerSpec);
+    ApplyTalentTemplate(player, playerSpec);
+    CompleteClassQuests(player, questPlan);
+
+    uint32 const moneyToGrant = GetMoneyToGrant(player);
+    if (moneyToGrant)
+        player->ModifyMoney(static_cast<int32>(moneyToGrant));
 
     if (player->getPowerType() == POWER_MANA)
-    {
         player->SetPower(POWER_MANA, player->GetMaxPower(POWER_MANA));
-    }
 
     player->SetHealth(player->GetMaxHealth());
-
     return true;
 }
 
@@ -516,73 +908,50 @@ void LevelBoost::ExtractTalentTemplate(Player* player, std::string player_spec)
     QueryResult result = CharacterDatabase.Query("SELECT spell FROM character_talent WHERE guid = '{}' AND specMask = '{}'", player->GetGUID().GetCounter(), player->GetActiveSpecMask());
 
     if (!result)
-    {
         return;
-    }
-    else if (player->GetFreeTalentPoints() > 0)
-    {
-        return;
-    }
-    else
-    {
-        uint32 oldTime = getMSTime();
-        uint32 count = 0;
-        do
-        {
-            Field* fields = result->Fetch();
-            uint32 spell = fields[0].Get<uint32>();
-            WorldDatabase.Execute("INSERT INTO `mod_boost_talents` (`player_class`, `player_spec`, `talent_id`) VALUES ('{}', '{}', {})", GetClassString(player), player_spec, spell);
-            ++count;
-        } while (result->NextRow());
 
-        LOG_INFO("module", ">> Extracted {} talent templates in {} ms.", count, GetMSTimeDiffToNow(oldTime));
-    }
+    uint32 oldTime = getMSTime();
+    uint32 count = 0;
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32 spell = fields[0].Get<uint32>();
+        WorldDatabase.Execute("INSERT INTO `mod_boost_talents` (`player_class`, `player_spec`, `talent_id`) VALUES ('{}', '{}', {})", GetClassString(player), player_spec, spell);
+        ++count;
+    } while (result->NextRow());
+
+    LOG_INFO("module", ">> Extracted {} talent templates in {} ms.", count, GetMSTimeDiffToNow(oldTime));
 }
 
 void LevelBoost::ExtractGlyphTemplate(Player* player, std::string player_spec)
 {
     WorldDatabase.Query("DELETE FROM mod_boost_glyphs WHERE player_class = '{}' AND player_spec = '{}'", GetClassString(player), player_spec);
 
-    QueryResult result = CharacterDatabase.Query("SELECT `glyph1`, `glyph2` FROM `character_glyphs` WHERE `guid`={} AND `talentGroup`={}", player->GetGUID().GetCounter(), player->GetActiveSpec());
+    QueryResult result = CharacterDatabase.Query("SELECT `glyph1`, `glyph2`, `glyph3`, `glyph4`, `glyph5`, `glyph6` FROM `character_glyphs` WHERE `guid`={} AND `talentGroup`={}", player->GetGUID().GetCounter(), player->GetActiveSpec());
 
     if (!result)
         return;
 
-    for (uint8 slot = 0; slot < 2; ++slot)
+    Field* fields = result->Fetch();
+    for (uint8 slot = 0; slot < 6; ++slot)
     {
-        if (!result)
-            return;
+        uint32 glyphId = fields[slot].Get<uint32>();
+        if (glyphId == 0)
+            continue;
 
-        Field *fields = result->Fetch();
-        uint32 glyph1 = fields[0].Get<uint32>();
-        uint32 glyph2 = fields[1].Get<uint32>();
-
-        uint32 storedGlyph;
-
-        switch (slot)
-        {
-        case 0:
-            storedGlyph = glyph1;
-            break;
-        case 1:
-            storedGlyph = glyph2;
-            break;
-        default:
-            break;
-        }
-
-        WorldDatabase.Execute("INSERT INTO `mod_boost_glyphs` (`player_class`, `player_spec`, `glyph_slot`, `glyph_id`) VALUES ('{}', '{}', {}, {});", GetClassString(player).c_str(), player_spec, slot, storedGlyph);
+        WorldDatabase.Execute("INSERT INTO `mod_boost_glyphs` (`player_class`, `player_spec`, `glyph_slot`, `glyph_id`) VALUES ('{}', '{}', {}, {})", GetClassString(player), player_spec, slot, glyphId);
     }
 }
 
 void LevelBoost::ExtractTemplates(Player* player, std::string player_spec)
 {
-    LOG_INFO("module", ">> Level 15 Boost: Extracting gear template for {} {}...", GetClassString(player), player_spec);
+    LOG_INFO("module", ">> Level Boost: Extracting gear template for {} {}...", GetClassString(player), player_spec);
 
     ExtractGearTemplate(player, player_spec);
     ExtractTalentTemplate(player, player_spec);
     ExtractGlyphTemplate(player, player_spec);
 }
+
 
 class BoostNPC_Template : public CreatureScript
 {
@@ -593,13 +962,19 @@ public:
     {
         ClearGossipMenuFor(player);
 
-        if (player->GetLevel() != 1)
+        if (!sLevelBoost->levelBoost || player->GetLevel() != 1)
             return false;
+
+        if (sLevelBoost->HasBoostClaim(player))
+        {
+            player->GetSession()->SendAreaTriggerMessage("This character has already claimed a level boost.");
+            return false;
+        }
 
         if (creature->IsQuestGiver())
             player->PrepareQuestMenu(creature->GetGUID());
 
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Tell me about the level 15 boost...", GOSSIP_SENDER_MAIN, GOSSIP_LEVEL_15_BOOST);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Tell me about the level boost...", GOSSIP_SENDER_MAIN, GOSSIP_LEVEL_BOOST);
 
         switch (player->getRace())
         {
@@ -610,8 +985,6 @@ public:
             SendGossipMenuFor(player, 4936, creature->GetGUID());
             break;
         case RACE_DWARF:
-            SendGossipMenuFor(player, 4937, creature->GetGUID());
-            break;
         case RACE_GNOME:
             SendGossipMenuFor(player, 4937, creature->GetGUID());
             break;
@@ -619,8 +992,6 @@ public:
             SendGossipMenuFor(player, 8667, creature->GetGUID());
             break;
         case RACE_ORC:
-            SendGossipMenuFor(player, 3583, creature->GetGUID());
-            break;
         case RACE_TROLL:
             SendGossipMenuFor(player, 3583, creature->GetGUID());
             break;
@@ -633,6 +1004,8 @@ public:
         case RACE_UNDEAD_PLAYER:
             SendGossipMenuFor(player, 938, creature->GetGUID());
             break;
+        default:
+            return false;
         }
 
         return true;
@@ -640,195 +1013,105 @@ public:
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action)
     {
-        if (sender != GOSSIP_SENDER_MAIN)
+        if (!sLevelBoost->levelBoost || player->GetLevel() != 1 || sender != GOSSIP_SENDER_MAIN)
             return false;
 
         if (action == GOSSIP_MAIN_MENU)
+            return OnGossipHello(player, creature);
+
+        if (action == GOSSIP_LEVEL_BOOST)
         {
-            OnGossipHello(player, creature);
-        }
-        else if (action == GOSSIP_LEVEL_15_BOOST)
-        {
-            LOG_INFO("server.worldserver", ">> Level 15 Boost: GOSSIP_LEVEL_15_BOOST selected.");
             ClearGossipMenuFor(player);
             AddOptionsForClass(player);
             SendGossipMenuFor(player, BOOST_TEXT, creature->GetGUID());
+            return true;
         }
 
-        switch (action)
+        if (action > GOSSIP_GEAR && action <= GOSSIP_GEAR + SpecializationOptionCount)
         {
-        case GOSSIP_GEAR + 1:
-            sLevelBoost->player_spec = "Arms";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 2:
-            sLevelBoost->player_spec = "Fury";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 3:
-            sLevelBoost->player_spec = "Protection";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 4:
-            sLevelBoost->player_spec = "Assassination";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 5:
-            sLevelBoost->player_spec = "Combat";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 6:
-            sLevelBoost->player_spec = "Subtlety";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 7:
-            sLevelBoost->player_spec = "Elemental";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 8:
-            sLevelBoost->player_spec = "Enhancement";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 9:
-            sLevelBoost->player_spec = "Restoration";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 10:
-            sLevelBoost->player_spec = "Beast Mastery";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 11:
-            sLevelBoost->player_spec = "Marksmanship";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 12:
-            sLevelBoost->player_spec = "Survival";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 13:
-            sLevelBoost->player_spec = "Arcane";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 14:
-            sLevelBoost->player_spec = "Fire";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 15:
-            sLevelBoost->player_spec = "Frost";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 16:
-            sLevelBoost->player_spec = "Affliction";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 17:
-            sLevelBoost->player_spec = "Demonology";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 18:
-            sLevelBoost->player_spec = "Destruction";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 19:
-            sLevelBoost->player_spec = "Holy";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 20:
-            sLevelBoost->player_spec = "Protection";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 21:
-            sLevelBoost->player_spec = "Retribution";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 22:
-            sLevelBoost->player_spec = "Balance";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 23:
-            sLevelBoost->player_spec = "Feral";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 24:
-            sLevelBoost->player_spec = "Restoration";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 25:
-            sLevelBoost->player_spec = "Discipline";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 26:
-            sLevelBoost->player_spec = "Holy";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
-        case GOSSIP_GEAR + 27:
-            sLevelBoost->player_spec = "Shadow";
-            sLevelBoost->HandleBoost(player, creature);
-            break;
+            SpecializationOption const* option = FindSpecializationOption(action - GOSSIP_GEAR);
+            if (!option || option->classId != player->getClass())
+                return false;
+
+            ShowBoostPreview(player, creature, option);
+            return true;
         }
 
-        return true;
+        if (action > GOSSIP_CONFIRM_BOOST_BASE &&
+            action <= GOSSIP_CONFIRM_BOOST_BASE + SpecializationOptionCount)
+        {
+            SpecializationOption const* option = FindSpecializationOption(action - GOSSIP_CONFIRM_BOOST_BASE);
+            if (!option || option->classId != player->getClass())
+                return false;
+
+            if (sLevelBoost->HasBoostClaim(player))
+            {
+                player->GetSession()->SendAreaTriggerMessage("This character has already claimed a level boost.");
+                return false;
+            }
+
+            sLevelBoost->HandleBoost(player, creature, option->specName);
+            return true;
+        }
+
+        return false;
     }
+
 
     void AddOptionsForClass(Player* player)
     {
-        switch (player->getClass())
+        for (SpecializationOption const& option : SpecializationOptions)
         {
-        case CLASS_WARRIOR:
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Arms!", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 1);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Fury!", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 2);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Protection!", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 3);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back..", GOSSIP_SENDER_MAIN, GOSSIP_MAIN_MENU);
-            break;
-        case CLASS_ROGUE:
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Assassination", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 4);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Combat", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 5);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Subtlety", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 6);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back..", GOSSIP_SENDER_MAIN, GOSSIP_MAIN_MENU);
-            break;
-        case CLASS_SHAMAN:
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Elemental", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 7);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Enhancement", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 8);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Restoration", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 9);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back..", GOSSIP_SENDER_MAIN, GOSSIP_MAIN_MENU);
-            break;
-        case CLASS_HUNTER:
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Beast Mastery", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 10);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Marksmanship", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 11);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Survival", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 12);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back..", GOSSIP_SENDER_MAIN, GOSSIP_MAIN_MENU);
-            break;
-        case CLASS_MAGE:
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Arcane", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 13);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Fire", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 14);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Frost", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 15);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back..", GOSSIP_SENDER_MAIN, GOSSIP_MAIN_MENU);
-            break;
-        case CLASS_WARLOCK:
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Affliction", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 16);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Demonology", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 17);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Destruction", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 18);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back..", GOSSIP_SENDER_MAIN, GOSSIP_MAIN_MENU);
-            break;
-        case CLASS_PALADIN:
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Holy", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 19);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Protection", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 20);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Retribution", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 21);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back..", GOSSIP_SENDER_MAIN, GOSSIP_MAIN_MENU);
-            break;
-        case CLASS_DRUID:
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Balance", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 22);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Feral", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 23);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Restoration", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 24);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back..", GOSSIP_SENDER_MAIN, GOSSIP_MAIN_MENU);
-            break;
-        case CLASS_PRIEST:
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Discipline", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 25);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Holy", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 26);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I would like to play Shadow", GOSSIP_SENDER_MAIN, GOSSIP_GEAR + 27);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back..", GOSSIP_SENDER_MAIN, GOSSIP_MAIN_MENU);
-            break;
+            if (option.classId != player->getClass())
+                continue;
+
+            std::string text = "I would like to play ";
+            text += option.specName;
+            text += ".";
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, text, GOSSIP_SENDER_MAIN, GOSSIP_GEAR + option.id);
         }
+
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back...", GOSSIP_SENDER_MAIN, GOSSIP_MAIN_MENU);
+    }
+
+    void ShowBoostPreview(Player* player, Creature* creature, SpecializationOption const* option)
+    {
+        if (sLevelBoost->HasBoostClaim(player))
+        {
+            player->GetSession()->SendAreaTriggerMessage("This character has already claimed a level boost.");
+            return;
+        }
+
+        if (!sLevelBoost->TemplateExists(player, option->specName))
+        {
+            player->GetSession()->SendAreaTriggerMessage("There's no templates for %s specialization and race yet.", option->specName);
+            ClearGossipMenuFor(player);
+            AddOptionsForClass(player);
+            SendGossipMenuFor(player, BOOST_TEXT, creature->GetGUID());
+            return;
+        }
+
+        uint32 const targetLevel = sLevelBoost->GetTargetLevel();
+        ClassQuestPlan const plan = sLevelBoost->BuildClassQuestPlan(player, targetLevel);
+        uint32 const moneyToGrant = sLevelBoost->GetMoneyToGrant(player);
+        uint32 const questCount = static_cast<uint32>(plan.quests.size());
+        uint32 const unsupportedCount = static_cast<uint32>(plan.unsupportedRewardQuests.size() + plan.invalidRewardQuests.size());
+        uint32 const bagCount = sLevelBoost->giveBags ? std::min(sLevelBoost->starterBagCount,
+            static_cast<uint32>(INVENTORY_SLOT_BAG_END - INVENTORY_SLOT_BAG_START)) : 0;
+        ItemTemplate const* bagTemplate = bagCount ? sObjectMgr->GetItemTemplate(sLevelBoost->starterBagItem) : nullptr;
+        uint32 const bagSlots = bagTemplate && bagTemplate->InventoryType == INVTYPE_BAG ? bagTemplate->ContainerSlots : 0;
+
+        player->GetSession()->SendAreaTriggerMessage(
+            "Preview: %s, level %u, %u gold + %u copper, %u bags (%u slots each), %u class quests, %u reward entries; %u unsupported and %u without usable choices stay open.",
+            option->specName, targetLevel, moneyToGrant / 10000U, moneyToGrant % 10000U,
+            bagCount, bagSlots, questCount, plan.rewardItemEntries, unsupportedCount, plan.choiceRewardsSkipped);
+
+        ClearGossipMenuFor(player);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Confirm this boost", GOSSIP_SENDER_MAIN,
+            GOSSIP_CONFIRM_BOOST_BASE + option->id);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Choose a different specialization", GOSSIP_SENDER_MAIN,
+            GOSSIP_LEVEL_BOOST);
+        SendGossipMenuFor(player, BOOST_CONFIRM_TEXT, creature->GetGUID());
     }
 };
 
@@ -866,14 +1149,21 @@ public:
         uint32 oldTime = getMSTime();
 
         sLevelBoost->levelBoost = sConfigMgr->GetOption<bool>("LevelBoost.Enable", true);
+        sLevelBoost->boostLevel = sConfigMgr->GetOption<uint32>("LevelBoost.Level", 15);
+        sLevelBoost->startingGold = sConfigMgr->GetOption<uint32>("LevelBoost.Gold", 100);
+        sLevelBoost->giveBags = sConfigMgr->GetOption<bool>("Bags.Enable", true);
+        sLevelBoost->starterBagItem = sConfigMgr->GetOption<uint32>("Bags.Item", 4240);
+        sLevelBoost->starterBagCount = sConfigMgr->GetOption<uint32>("Bags.Count", 4);
+        sLevelBoost->oneTimeOnly = sConfigMgr->GetOption<bool>("LevelBoost.OneTimeOnly", true);
         sLevelBoost->dualSpec = sConfigMgr->GetOption<bool>("DualSpec.Enable", true);
         sLevelBoost->learnSpells = sConfigMgr->GetOption<bool>("LearnSpells.Enable", true);
         sLevelBoost->LearnProficiencies = sConfigMgr->GetOption<bool>("LearnProficiencies.Enable", true);
         sLevelBoost->learnTalents = sConfigMgr->GetOption<bool>("LearnTalents.Enable", true);
         sLevelBoost->learnGlyphs = sConfigMgr->GetOption<bool>("LearnGlyphs.Enable", true);
         sLevelBoost->destroyGear = sConfigMgr->GetOption<bool>("DestroyGear.Enable", true);
+        sLevelBoost->completeClassQuests = sConfigMgr->GetOption<bool>("ClassQuests.Enable", true);
 
-        LOG_INFO("module", ">> Loaded Level 15 Boost Config in {} ms.", GetMSTimeDiffToNow(oldTime));
+        LOG_INFO("module", ">> Loaded Level Boost Config in {} ms.", GetMSTimeDiffToNow(oldTime));
     }
 };
 
@@ -889,6 +1179,7 @@ public:
         static ChatCommandTable LevelBoostTable =
         {
             { "reload", HandleTableReload, SEC_ADMINISTRATOR, Console::No },
+            { "validate", HandleValidateTemplates, SEC_ADMINISTRATOR, Console::Yes },
             { "extract", HandleExtractTemplate, SEC_ADMINISTRATOR, Console::No },
         };
 
@@ -902,13 +1193,120 @@ public:
 
     static bool HandleTableReload(ChatHandler* handler)
     {
-        LOG_INFO("module", ">> Reloading templates for Level 15 Boost...");
+        LOG_INFO("module", ">> Reloading templates for Level Boost...");
         sLevelBoost->LoadSpellContainer();
         sLevelBoost->LoadProficiencyContainer();
         sLevelBoost->LoadGearContainer();
         sLevelBoost->LoadTalentContainer();
         sLevelBoost->LoadGlyphContainer();
-        handler->SendGlobalSysMessage("Level 15 Boost templates reloaded.");
+        handler->SendGlobalSysMessage("Level Boost templates reloaded.");
+        return true;
+    }
+
+
+    static bool HandleValidateTemplates(ChatHandler* handler)
+    {
+        uint32 errors = 0;
+        uint32 warnings = 0;
+        uint32 const targetLevel = sLevelBoost->GetTargetLevel();
+
+        handler->SendSysMessage("Validating Level Boost templates...");
+        for (SpecializationOption const& option : SpecializationOptions)
+        {
+            bool hasGear = false;
+            bool hasTalents = false;
+            bool hasGlyphs = false;
+
+            for (GearTemplate const& gear : sLevelBoost->gearTemplateList)
+                hasGear = hasGear || (gear.player_class == option.className && gear.player_spec == option.specName);
+            for (TalentTemplate const& talent : sLevelBoost->talentTemplateList)
+                hasTalents = hasTalents || (talent.player_class == option.className && talent.player_spec == option.specName);
+            for (GlyphTemplate const& glyph : sLevelBoost->glyphTemplateList)
+                hasGlyphs = hasGlyphs || (glyph.player_class == option.className && glyph.player_spec == option.specName);
+
+            if (!hasGear)
+            {
+                handler->PSendSysMessage("Missing gear template: {} / {}", option.className, option.specName);
+                ++errors;
+            }
+            if (!hasTalents)
+            {
+                handler->PSendSysMessage("No talent template: {} / {}", option.className, option.specName);
+                ++warnings;
+            }
+            if (!hasGlyphs)
+            {
+                handler->PSendSysMessage("No glyph template: {} / {}", option.className, option.specName);
+                ++warnings;
+            }
+        }
+
+        for (GearTemplate const& gear : sLevelBoost->gearTemplateList)
+        {
+            ItemTemplate const* item = sObjectMgr->GetItemTemplate(gear.item_entry);
+            if (!item)
+            {
+                handler->PSendSysMessage("Invalid gear item {} for {} / {} / {}", gear.item_entry, gear.player_class, gear.player_spec, gear.player_race);
+                ++errors;
+                continue;
+            }
+
+            if (gear.equipment_slot >= EQUIPMENT_SLOT_END)
+            {
+                handler->PSendSysMessage("Invalid equipment slot {} for item {} ({} / {})", gear.equipment_slot, gear.item_entry, gear.player_class, gear.player_spec);
+                ++errors;
+            }
+
+            uint32 const classMask = GetClassMaskByName(gear.player_class);
+            uint32 const raceMask = GetRaceMaskByName(gear.player_race);
+            if (!classMask || (static_cast<uint32>(item->AllowableClass) & classMask) == 0)
+            {
+                handler->PSendSysMessage("Item {} cannot be used by class {}.", gear.item_entry, gear.player_class);
+                ++errors;
+            }
+            if (!raceMask || (static_cast<uint32>(item->AllowableRace) & raceMask) == 0)
+            {
+                handler->PSendSysMessage("Item {} cannot be used by race {}.", gear.item_entry, gear.player_race);
+                ++errors;
+            }
+            if (item->RequiredLevel > targetLevel)
+            {
+                handler->PSendSysMessage("Item {} requires level {}, above the configured boost level {}.", gear.item_entry, item->RequiredLevel, targetLevel);
+                ++warnings;
+            }
+        }
+
+        for (TalentTemplate const& talent : sLevelBoost->talentTemplateList)
+            if (!GetTalentSpellCost(talent.talent_id))
+            {
+                handler->PSendSysMessage("Invalid talent spell {} for {} / {}.", talent.talent_id, talent.player_class, talent.player_spec);
+                ++errors;
+            }
+
+        for (GlyphTemplate const& glyph : sLevelBoost->glyphTemplateList)
+            if (glyph.glyph_slot >= 6 || !sGlyphPropertiesStore.LookupEntry(glyph.glyph_id))
+            {
+                handler->PSendSysMessage("Invalid glyph {} in slot {} for {} / {}.", glyph.glyph_id, glyph.glyph_slot, glyph.player_class, glyph.player_spec);
+                ++errors;
+            }
+
+        if (sLevelBoost->giveBags && sLevelBoost->starterBagCount)
+        {
+            ItemTemplate const* bag = sObjectMgr->GetItemTemplate(sLevelBoost->starterBagItem);
+            if (!bag || bag->InventoryType != INVTYPE_BAG || !bag->ContainerSlots || bag->ContainerSlots > MAX_BAG_SIZE)
+            {
+                handler->PSendSysMessage("Configured starter bag item {} is missing or is not a usable bag.", sLevelBoost->starterBagItem);
+                ++errors;
+            }
+            if (sLevelBoost->starterBagCount > INVENTORY_SLOT_BAG_END - INVENTORY_SLOT_BAG_START)
+            {
+                handler->PSendSysMessage("Configured bag count {} exceeds the {} character bag slots; the count will be clamped.",
+                    sLevelBoost->starterBagCount, INVENTORY_SLOT_BAG_END - INVENTORY_SLOT_BAG_START);
+                ++warnings;
+            }
+        }
+
+        handler->PSendSysMessage("Level Boost validation found {} error(s) and {} warning(s).", errors, warnings);
         return true;
     }
 
@@ -918,7 +1316,7 @@ public:
 
         if (!player)
         {
-            LOG_INFO("module", ">> Level 15 Boost: No player selected.");
+            LOG_INFO("module", ">> Level Boost: No player selected.");
             return false;
         }
 
@@ -926,8 +1324,7 @@ public:
         player->SaveToDB(trans, false, false);
         CharacterDatabase.CommitTransaction(trans);
 
-        sLevelBoost->player_spec = player_spec;
-        sLevelBoost->ExtractTemplates(player, sLevelBoost->player_spec);
+        sLevelBoost->ExtractTemplates(player, player_spec);
         handler->SendSysMessage("Successfully extracted template.");
 
         return true;

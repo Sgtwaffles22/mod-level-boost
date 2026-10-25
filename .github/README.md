@@ -1,52 +1,42 @@
 # Level Boost
 
-## Description
-"Level Boost" is a module for AzerothCore that offers an optional level boost to level 15, available as a gossip option at each race's starting zone initial quest giver. This module is designed to enhance the player experience by providing a quick start option for players who wish to skip the early leveling phase.
-
-## Features
-- Automatic boost to any specified level via a gossip option with the initial quest giver in each race's starting zone.
-- Destruction of starting items and equipping players with appropriate gear, talents, and glyphs based on configuration.
-- Configurable options for enabling or disabling specific features like learning spells, proficiencies, talents, dual spec, and destroying gear.
-- Ability to reload tables and extract gear templates based on player's current gear.
+This AzerothCore module offers a configurable boost from a race's starting quest giver. The default target is level 15 and the default grant is 100 gold.
 
 ## Configuration
-The module includes several configurable options in the `mod_level_15_boost.conf` file:
 
+Copy `conf/mod_level_boost.conf.dist` to `conf/mod_level_boost.conf` and edit:
 
 ```ini
-# Level 15 Boost
 LevelBoost.Enable = 1
-
-# Learn Spells
-LearnSpells.Enable = 1
-
-# Learn Proficiencies
-LearnProficiencies.Enable = 1
-
-# Learn Talents
-LearnTalents.Enable = 1
-
-# Learn Glyphs
-LearnGlyphs.Enable = 1
-
-# Enable Dual Spec
-DualSpec.Enable = 1
-
-# Destroy Starting Gear
-DestroyGear.Enable = 1
+LevelBoost.OneTimeOnly = 1
+LevelBoost.Level = 15
+LevelBoost.Gold = 100
+Bags.Enable = 1
+Bags.Item = 4240
+Bags.Count = 4
+ClassQuests.Enable = 1
 ```
 
-## Usage Instructions
+`LevelBoost.Level` accepts levels from 1 through the server's `MaxPlayerLevel`; the module clamps the configured value to that range. `LevelBoost.Gold` is in whole gold: 1g is 10,000 copper, so `100` grants 100g (1,000,000 copper) and `0` grants none. The grant respects the core's money cap. ClassQuests.Enable defaults to 1. Boost previews show the target level, actual gold grant, class quest count, reward entry count, and quests left incomplete. Fixed item rewards are granted; a choice reward is selected only when its first usable option matches the character's class, race, faction, and target level. If no choice item is usable, that quest stays incomplete. Quests with unsupported non-item rewards, such as spells, reputation, honor, titles, bonus talents, arena points, or reward mail, are also left incomplete and logged so they can still be completed normally. Quest XP and money are not granted. Reward items are mailed if the full reward does not fit in the character's inventory.
 
-### Renaming .conf.dist to .conf
-The mod_level_15_boost.conf.dist file is a template file that you will need to rename to mod_level_15_boost.conf before using the module. To do this, simply open the file in a text editor and change the name from .conf.dist to .conf.
+`Bags.Item` defaults to item 4240 (Woolen Bag), an 8-slot bag, and `Bags.Count` defaults to four. The module equips bags in the character's four bag slots (19–22), filling empty slots first; bags that cannot be equipped are sent by mail. This gives a level-15 character up to 32 extra inventory slots without using higher-level bags.
 
-### Commands
+## Starter templates
 
-- `.levelboost reload`: Reload the module's tables.
-- `.levelboost extract [spec]`: Extract and update the gear template to match what the player running the command is currently wearing. Example: `.levelboost extract Retribution`
+The world database SQL creates generic level-15 templates for all 27 class/spec combinations. Apply the module's base world SQL to install them and the starting NPC text. Apply `data/sql/db-characters/base/level_boost_claim.sql` to install the one-time claim table when `LevelBoost.OneTimeOnly = 1` (the default).
 
-## Support and Contributions
+- Gear is selected from the core's `item_template` table, limited to class- and race-compatible items with a required level of 15 or lower.
+- Talents spend six points in the selected tree's first tier. Any points left at a higher configured boost level remain available.
+- One class-appropriate minor glyph is equipped in the level-15 glyph slot.
 
-For support, questions, or contributions, please use the GitHub Issues page associated with this project.
+The gear and talent starter data is aimed at level 15. For a different target, boost a character to that level, configure its gear, talents, and glyphs, then run `.levelboost extract <spec>` as an administrator to replace that class/spec's templates. For example: `.levelboost extract Retribution`.
 
+## Boost flow
+
+After choosing a specialization, the gossip menu shows a preview with a confirm button. Each character can claim the boost once by default. Set LevelBoost.OneTimeOnly to 0 to allow repeat claims.
+
+## Commands
+
+- `.levelboost reload` reloads the gear, talent, glyph, spell, and proficiency templates.
+- `.levelboost validate` checks that all 27 specs have templates and reports invalid or level-incompatible data.
+- `.levelboost extract <spec>` saves the current character's gear, talents, and all six glyph slots for that specialization.
