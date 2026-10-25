@@ -1,6 +1,12 @@
 # Level Boost
 
+![Level Boost module icon](icon.png)
+
 Level Boost is an AzerothCore module that lets a level-1 character choose a specialization and boost at a supported starting-area NPC. The default target is level 15, and the default grant is 100 gold.
+
+## Fork and attribution
+
+This repository is a fork of [fischerlol/mod-level-15-boost](https://github.com/fischerlol/mod-level-15-boost), originally created by [fischerlol](https://github.com/fischerlol). This fork is maintained as [Sgtwaffles22/mod-level-boost](https://github.com/Sgtwaffles22/mod-level-boost). It retains the original GPL-3.0 license; see [LICENSE](LICENSE).
 
 ## Installation
 
