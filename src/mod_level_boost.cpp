@@ -94,13 +94,6 @@ uint32 GetRaceMaskByName(std::string const& raceName)
     return 0;
 }
 
-uint32 const ITEM_RELIC_OF_THE_DEAD_ENTRY = 3004;
-
-bool IsExcludedBoostGearItem(uint32 itemEntry)
-{
-    return itemEntry == ITEM_RELIC_OF_THE_DEAD_ENTRY;
-}
-
 bool IsItemUsableForBoost(Player* player, ItemTemplate const* itemTemplate, uint32 targetLevel)
 {
     if (!itemTemplate || itemTemplate->RequiredLevel > targetLevel ||
@@ -135,8 +128,7 @@ ItemTemplate const* FindGearAlternative(Player* player, ItemTemplate const* orig
     for (auto const& [itemId, candidate] : *itemTemplates)
     {
         if (candidate.Class != original->Class || candidate.SubClass != original->SubClass ||
-            candidate.InventoryType != original->InventoryType || candidate.ItemId == ITEM_RELIC_OF_THE_DEAD_ENTRY ||
-            HasProfessionSkillRequirement(&candidate) ||
+            candidate.InventoryType != original->InventoryType || HasProfessionSkillRequirement(&candidate) ||
             candidate.RequiredLevel > player->GetLevel() || candidate.ItemLevel > 22 ||
             candidate.Quality < 1 || candidate.Quality > 2 ||
             (candidate.AllowableClass != std::numeric_limits<uint32>::max() &&
@@ -171,8 +163,7 @@ ItemTemplate const* FindPaladinRetributionTwoHandWeapon(Player* player)
             candidate.SubClass == ITEM_SUBCLASS_WEAPON_SWORD2;
 
         if (candidate.Class != ITEM_CLASS_WEAPON || candidate.InventoryType != INVTYPE_2HWEAPON ||
-            !isPaladinWeaponSubclass || candidate.ItemId == ITEM_RELIC_OF_THE_DEAD_ENTRY ||
-            HasProfessionSkillRequirement(&candidate) || candidate.ItemLevel > 22 ||
+            !isPaladinWeaponSubclass || HasProfessionSkillRequirement(&candidate) || candidate.ItemLevel > 22 ||
             candidate.Quality < 1 || candidate.Quality > 2 ||
             !IsItemUsableForBoost(player, &candidate, player->GetLevel()))
             continue;
@@ -856,6 +847,10 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
             playerRace != gearTemplate.player_race)
             continue;
 
+        if (gearTemplate.equipment_slot == EQUIPMENT_SLOT_TRINKET1 ||
+            gearTemplate.equipment_slot == EQUIPMENT_SLOT_TRINKET2)
+            continue;
+
         if (isPaladinRetribution && gearTemplate.equipment_slot == EQUIPMENT_SLOT_OFFHAND && retributionWeapon)
             continue;
 
@@ -869,17 +864,17 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
         }
         else if (!itemTemplate)
             continue;
-        else if (HasProfessionSkillRequirement(itemTemplate) || IsExcludedBoostGearItem(itemEntry))
+        else if (HasProfessionSkillRequirement(itemTemplate))
         {
             ItemTemplate const* alternative = FindGearAlternative(player, itemTemplate);
             if (!alternative)
             {
-                LOG_ERROR("module", "Gear item {} for {} / {} is excluded or requires profession skill {} rank {}, and no suitable alternative was found.",
+                LOG_ERROR("module", "Gear item {} for {} / {} requires profession skill {} rank {}, and no suitable alternative was found.",
                     itemEntry, playerClass, playerSpec, itemTemplate->RequiredSkill, itemTemplate->RequiredSkillRank);
                 continue;
             }
 
-            LOG_WARN("module", "Replacing excluded or profession-gated gear item {} with {} for {} / {} / {}.",
+            LOG_WARN("module", "Replacing profession-gated gear item {} with {} for {} / {} / {}.",
                 itemEntry, alternative->ItemId, playerClass, playerSpec, playerRace);
             itemEntry = alternative->ItemId;
             itemTemplate = alternative;
@@ -1371,6 +1366,11 @@ public:
                 handler->PSendSysMessage("Invalid equipment slot {} for item {} ({} / {})", gear.equipment_slot, gear.item_entry, gear.player_class, gear.player_spec);
                 ++errors;
             }
+            else if (gear.equipment_slot == EQUIPMENT_SLOT_TRINKET1 || gear.equipment_slot == EQUIPMENT_SLOT_TRINKET2)
+            {
+                handler->PSendSysMessage("Trinket template row for item {} will be ignored; boost gear excludes trinkets.", gear.item_entry);
+                ++warnings;
+            }
 
             uint32 const classMask = GetClassMaskByName(gear.player_class);
             uint32 const raceMask = GetRaceMaskByName(gear.player_race);
@@ -1387,11 +1387,6 @@ public:
             if (item->RequiredLevel > targetLevel)
             {
                 handler->PSendSysMessage("Item {} requires level {}, above the configured boost level {}.", gear.item_entry, item->RequiredLevel, targetLevel);
-                ++warnings;
-            }
-            if (IsExcludedBoostGearItem(gear.item_entry))
-            {
-                handler->PSendSysMessage("Item {} is Relic of the Dead and will be replaced during the boost.", gear.item_entry);
                 ++warnings;
             }
             if (HasProfessionSkillRequirement(item))

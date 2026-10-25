@@ -121,7 +121,6 @@ FROM (
         SELECT 8, 9, 'armor' UNION ALL
         SELECT 9, 10, 'armor' UNION ALL
         SELECT 10, 11, 'armor' UNION ALL
-        SELECT 12, 12, 'trinket' UNION ALL
         SELECT 14, 16, 'armor' UNION ALL
         SELECT 15, 13, 'weapon' UNION ALL
         SELECT 15, 17, 'weapon' UNION ALL
@@ -158,14 +157,12 @@ FROM (
           AND it.`Quality` BETWEEN 1 AND 2
           AND it.`RequiredSkill` = 0
           AND it.`RequiredSkillRank` = 0
-          AND it.`entry` <> 3004 -- Relic of the Dead
           AND it.`InventoryType` = st.`inventory_type`
           AND (it.`InventoryType` <> 17 OR (cr.`player_class` = 'Paladin' AND sp.`player_spec` = 'Retribution'))
           AND (it.`AllowableClass` = -1 OR (it.`AllowableClass` & (1 << (cr.`class_id` - 1))) <> 0)
           AND (it.`AllowableRace` = -1 OR (it.`AllowableRace` & cr.`race_mask`) <> 0)
           AND (
                 (st.`item_kind` = 'armor' AND it.`class` = 4 AND it.`subclass` = cr.`armor_subclass`)
-             OR (st.`item_kind` = 'trinket' AND it.`class` = 4)
              OR (st.`item_kind` = 'weapon' AND it.`class` = 2 AND FIND_IN_SET(it.`subclass`, cr.`weapon_subclasses`) > 0)
              OR (st.`item_kind` = 'shield' AND cr.`can_shield` = 1
                  AND NOT (cr.`player_class` = 'Paladin' AND sp.`player_spec` = 'Retribution')
