@@ -2,6 +2,7 @@
 #include "mod_level_boost_internal.h"
 #include "DBCStores.h"
 #include <limits>
+#include <array>
 
 namespace
 {
@@ -65,6 +66,45 @@ ItemTemplate const* FindPaladinRetributionTwoHandWeapon(Player* player)
     }
 
     return bestWeapon;
+}
+
+ItemTemplate const* FindOffhandItem(Player* player, uint32 mainHandEntry)
+{
+    auto const* itemTemplates = sObjectMgr->GetItemTemplateStore();
+    if (!itemTemplates)
+        return nullptr;
+
+    ItemTemplate const* bestOffhandItem = nullptr;
+    for (auto const& [itemId, candidate] : *itemTemplates)
+    {
+        bool const isRogueWeaponSubclass = candidate.SubClass == ITEM_SUBCLASS_WEAPON_MACE ||
+            candidate.SubClass == ITEM_SUBCLASS_WEAPON_SWORD ||
+            candidate.SubClass == ITEM_SUBCLASS_WEAPON_FIST ||
+            candidate.SubClass == ITEM_SUBCLASS_WEAPON_DAGGER;
+        bool const isRogueOffhandWeapon = player->getClass() == CLASS_ROGUE &&
+            candidate.Class == ITEM_CLASS_WEAPON && isRogueWeaponSubclass &&
+            (candidate.InventoryType == INVTYPE_WEAPON || candidate.InventoryType == INVTYPE_WEAPONOFFHAND);
+        bool const isShield = candidate.Class == ITEM_CLASS_ARMOR &&
+            candidate.SubClass == ITEM_SUBCLASS_ARMOR_SHIELD && candidate.InventoryType == INVTYPE_SHIELD;
+        bool const isHoldable = candidate.InventoryType == INVTYPE_HOLDABLE;
+
+        if (itemId == mainHandEntry || (!isRogueOffhandWeapon && !isShield && !isHoldable) ||
+            LevelBoostInternal::HasProfessionSkillRequirement(&candidate) || candidate.ItemLevel > 22 ||
+            candidate.Quality < 1 || candidate.Quality > 2 ||
+            !LevelBoostInternal::IsItemUsableForBoost(player, &candidate, player->GetLevel()))
+            continue;
+
+        uint16 destination = 0;
+        if (player->CanEquipNewItem(EQUIPMENT_SLOT_OFFHAND, destination, itemId, false) != EQUIP_ERR_OK)
+            continue;
+
+        if (!bestOffhandItem || candidate.Quality > bestOffhandItem->Quality ||
+            (candidate.Quality == bestOffhandItem->Quality && candidate.ItemLevel > bestOffhandItem->ItemLevel) ||
+            (candidate.Quality == bestOffhandItem->Quality && candidate.ItemLevel == bestOffhandItem->ItemLevel && itemId < bestOffhandItem->ItemId))
+            bestOffhandItem = &candidate;
+    }
+
+    return bestOffhandItem;
 }
 }
 
@@ -234,18 +274,42 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
     std::string const playerClass = GetClassString(player);
     std::string const playerRace = GetRaceString(player);
     bool const isPaladinRetribution = playerClass == "Paladin" && playerSpec == "Retribution";
+    bool const isRogue = playerClass == "Rogue";
     ItemTemplate const* retributionWeapon = isPaladinRetribution ? FindPaladinRetributionTwoHandWeapon(player) : nullptr;
     bool retributionWeaponEquipped = false;
+    uint32 rogueMainHandEntry = 0;
+    bool offhandEquipped = false;
+    std::array<bool, EQUIPMENT_SLOT_END> processedSlots{};
 
     if (isPaladinRetribution && !retributionWeapon)
         LOG_WARN("module", "No eligible level {} two-handed weapon was found for Paladin Retribution {}.", player->GetLevel(), player->GetName());
 
+    // Process the off-hand after the main hand so fallback selection can avoid duplicate weapons.
+    for (uint8 pass = 0; pass < 2; ++pass)
     for (GearTemplate const& gearTemplate : gearTemplateList)
     {
         if (playerClass != gearTemplate.player_class ||
             playerSpec != gearTemplate.player_spec ||
             playerRace != gearTemplate.player_race)
             continue;
+
+        bool const isOffhandSlot = gearTemplate.equipment_slot == EQUIPMENT_SLOT_OFFHAND;
+        if (isOffhandSlot != (pass == 1))
+            continue;
+
+        if (gearTemplate.equipment_slot >= EQUIPMENT_SLOT_END)
+        {
+            LOG_WARN("module", "Ignoring invalid equipment slot {} in {} / {} / {} gear template.",
+                gearTemplate.equipment_slot, playerClass, playerSpec, playerRace);
+            continue;
+        }
+
+        if (processedSlots[gearTemplate.equipment_slot])
+        {
+            LOG_WARN("module", "Ignoring duplicate gear template row for slot {} in {} / {} / {}.",
+                gearTemplate.equipment_slot, playerClass, playerSpec, playerRace);
+            continue;
+        }
 
         if (gearTemplate.equipment_slot == EQUIPMENT_SLOT_TRINKET1 ||
             gearTemplate.equipment_slot == EQUIPMENT_SLOT_TRINKET2)
@@ -264,6 +328,22 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
         }
         else if (!itemTemplate)
             continue;
+        else if (isRogue && isOffhandSlot)
+        {
+            Item* mainHand = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+            rogueMainHandEntry = mainHand ? mainHand->GetEntry() : 0;
+            if (itemEntry == rogueMainHandEntry)
+            {
+                ItemTemplate const* alternative = FindOffhandItem(player, rogueMainHandEntry);
+                if (!alternative)
+                {
+                    LOG_WARN("module", "No distinct off-hand weapon could be found for Rogue {}.", player->GetName());
+                    continue;
+                }
+                itemTemplate = alternative;
+                itemEntry = alternative->ItemId;
+            }
+        }
         else if (LevelBoostInternal::HasProfessionSkillRequirement(itemTemplate))
         {
             ItemTemplate const* alternative = FindGearAlternative(player, itemTemplate);
@@ -283,7 +363,25 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
         if (itemTemplate->RequiredLevel > player->GetLevel())
             continue;
 
-        player->EquipNewItem(gearTemplate.equipment_slot, itemEntry, true);
+        uint16 destination = 0;
+        InventoryResult const equipResult = player->CanEquipNewItem(gearTemplate.equipment_slot, destination, itemEntry, false);
+        if (equipResult != EQUIP_ERR_OK)
+        {
+            LOG_WARN("module", "Skipping gear item {} for {} in slot {} because it cannot be equipped (result {}).",
+                itemEntry, player->GetName(), gearTemplate.equipment_slot, static_cast<uint32>(equipResult));
+            continue;
+        }
+
+        Item* equippedItem = player->EquipNewItem(destination, itemEntry, true);
+        if (!equippedItem)
+            continue;
+        processedSlots[gearTemplate.equipment_slot] = true;
+
+        if (isRogue && gearTemplate.equipment_slot == EQUIPMENT_SLOT_MAINHAND)
+            rogueMainHandEntry = itemEntry;
+        if (isOffhandSlot)
+            offhandEquipped = true;
+
         if (isPaladinRetribution && gearTemplate.equipment_slot == EQUIPMENT_SLOT_MAINHAND && retributionWeapon)
         {
             Item* equippedWeapon = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
@@ -295,6 +393,19 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
     {
         player->EquipNewItem(EQUIPMENT_SLOT_MAINHAND, retributionWeapon->ItemId, true);
         LOG_INFO("module", "Equipped fallback two-handed weapon {} for Paladin Retribution {}.", retributionWeapon->ItemId, player->GetName());
+    }
+
+    if (!offhandEquipped && !(isPaladinRetribution && retributionWeapon))
+    {
+        if (ItemTemplate const* offhandItem = FindOffhandItem(player, rogueMainHandEntry))
+        {
+            uint16 destination = 0;
+            if (player->CanEquipNewItem(EQUIPMENT_SLOT_OFFHAND, destination, offhandItem->ItemId, false) == EQUIP_ERR_OK &&
+                player->EquipNewItem(destination, offhandItem->ItemId, true))
+                LOG_INFO("module", "Equipped fallback off-hand item {} for {} {}.", offhandItem->ItemId, playerClass, player->GetName());
+        }
+        else
+            LOG_WARN("module", "No eligible off-hand item could be equipped for {} {}.", playerClass, player->GetName());
     }
 }
 

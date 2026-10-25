@@ -126,6 +126,8 @@ FROM (
         SELECT 15, 17, 'weapon' UNION ALL
         SELECT 15, 21, 'weapon' UNION ALL
         SELECT 16, 14, 'shield' UNION ALL
+        SELECT 16, 13, 'weapon' UNION ALL
+        SELECT 16, 22, 'weapon' UNION ALL
         SELECT 17, 15, 'ranged' UNION ALL
         SELECT 17, 19, 'wand'
     ),
@@ -158,6 +160,7 @@ FROM (
           AND it.`RequiredSkill` = 0
           AND it.`RequiredSkillRank` = 0
           AND it.`InventoryType` = st.`inventory_type`
+          AND (st.`equipment_slot` <> 16 OR st.`item_kind` <> 'weapon' OR cr.`player_class` = 'Rogue')
           AND (it.`InventoryType` <> 17 OR (cr.`player_class` = 'Paladin' AND sp.`player_spec` = 'Retribution'))
           AND (it.`AllowableClass` = -1 OR (it.`AllowableClass` & (1 << (cr.`class_id` - 1))) <> 0)
           AND (it.`AllowableRace` = -1 OR (it.`AllowableRace` & cr.`race_mask`) <> 0)

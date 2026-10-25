@@ -1,5 +1,6 @@
 #include "mod_level_boost.h"
 #include <algorithm>
+#include <array>
 
 void LevelBoost::LearnDualSpec(Player* player)
 {
@@ -27,18 +28,34 @@ void LevelBoost::DestroyProjectiles(Player* player)
     if (player->getClass() != CLASS_HUNTER)
         return;
 
-    if (player->HasItemCount(ITEM_DEFAULT_ARROWS))
-    {
-        player->DestroyItemCount(ITEM_DEFAULT_ARROWS, player->GetItemCount(ITEM_DEFAULT_ARROWS), true, true);
-        player->AddItem(ITEM_BOOST_ARROWS, ARROW_COUNT);
-        player->SetAmmo(ITEM_BOOST_ARROWS);
-    }
+    Item* rangedWeapon = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
+    if (!rangedWeapon)
+        return;
+
+    ItemTemplate const* rangedTemplate = rangedWeapon->GetTemplate();
+    if (!rangedTemplate || rangedTemplate->Class != ITEM_CLASS_WEAPON)
+        return;
+
+    uint32 ammoEntry = 0;
+    if (rangedTemplate->SubClass == ITEM_SUBCLASS_WEAPON_BOW ||
+        rangedTemplate->SubClass == ITEM_SUBCLASS_WEAPON_CROSSBOW)
+        ammoEntry = ITEM_BOOST_ARROWS;
+    else if (rangedTemplate->SubClass == ITEM_SUBCLASS_WEAPON_GUN)
+        ammoEntry = ITEM_BOOST_BULLETS;
     else
+        return;
+
+    std::array<uint32, 4> const managedAmmo = { ITEM_DEFAULT_ARROWS, ITEM_DEFAULT_BULLETS, ITEM_BOOST_ARROWS, ITEM_BOOST_BULLETS };
+    for (uint32 itemEntry : managedAmmo)
     {
-        player->DestroyItemCount(ITEM_DEFAULT_BULLETS, player->GetItemCount(ITEM_DEFAULT_BULLETS), true, true);
-        player->AddItem(ITEM_BOOST_BULLETS, BULLET_COUNT);
-        player->SetAmmo(ITEM_BOOST_BULLETS);
+        uint32 const itemCount = player->GetItemCount(itemEntry);
+        if (itemCount)
+            player->DestroyItemCount(itemEntry, itemCount, true, true);
     }
+
+    uint32 const ammoCount = ammoEntry == ITEM_BOOST_ARROWS ? ARROW_COUNT : BULLET_COUNT;
+    if (player->AddItem(ammoEntry, ammoCount))
+        player->SetAmmo(ammoEntry);
 }
 
 void LevelBoost::AddClassItems(Player* player)
@@ -46,8 +63,10 @@ void LevelBoost::AddClassItems(Player* player)
     switch (player->getClass())
     {
         case CLASS_SHAMAN:
-            player->AddItem(ITEM_SHAMAN_TOTEM_1, 1);
-            player->AddItem(ITEM_SHAMAN_TOTEM_2, 1);
+            if (!player->HasItemCount(ITEM_SHAMAN_TOTEM_1))
+                player->AddItem(ITEM_SHAMAN_TOTEM_1, 1);
+            if (!player->HasItemCount(ITEM_SHAMAN_TOTEM_2))
+                player->AddItem(ITEM_SHAMAN_TOTEM_2, 1);
             break;
     }
 }
@@ -66,7 +85,9 @@ void LevelBoost::AddStarterBags(Player* player)
     }
 
     uint32 const maxEquippedBags = INVENTORY_SLOT_BAG_END - INVENTORY_SLOT_BAG_START;
-    uint32 bagsRemaining = std::min(starterBagCount, maxEquippedBags);
+    uint32 const targetBagCount = std::min(starterBagCount, maxEquippedBags);
+    uint32 const existingBagCount = std::min(player->GetItemCount(starterBagItem), targetBagCount);
+    uint32 bagsRemaining = targetBagCount - existingBagCount;
     if (starterBagCount > maxEquippedBags)
         LOG_WARN("module", "Configured starter bag count {} exceeds the four character bag slots; limiting the grant to {}.", starterBagCount, maxEquippedBags);
     for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END && bagsRemaining; ++slot)
@@ -78,17 +99,9 @@ void LevelBoost::AddStarterBags(Player* player)
             --bagsRemaining;
         else
         {
-            player->SendItemRetrievalMail(starterBagItem, 1);
-            --bagsRemaining;
-            LOG_WARN("module", "Could not equip starter bag {} in bag slot {} for {}; sent it by mail.",
+            LOG_WARN("module", "Could not equip starter bag {} in bag slot {} for {}; skipped the extra bag.",
                 starterBagItem, slot, player->GetName());
         }
-    }
-
-    while (bagsRemaining)
-    {
-        player->SendItemRetrievalMail(starterBagItem, 1);
-        --bagsRemaining;
     }
 }
 
@@ -252,7 +265,6 @@ void LevelBoost::HandleBoost(Player* player, Creature* creature, std::string con
     LearnDualSpec(player);
     DestroyProjectiles(player);
     LearnSpellsForLevel(player);
-    LearnProficienciesForLevel(player);
     AddClassItems(player);
     player->UpdateSkillsToMaxSkillsForLevel();
 
@@ -403,6 +415,8 @@ bool LevelBoost::ApplyFullTemplate(Player* player, std::string const& playerSpec
 
     uint32 const targetLevel = GetTargetLevel();
     player->GiveLevel(static_cast<uint8>(targetLevel));
+    // Learn weapon proficiencies (including Rogue Dual Wield) before equipment validation.
+    LearnProficienciesForLevel(player);
     ClassQuestPlan const questPlan = BuildClassQuestPlan(player, targetLevel);
     DestroyGear(player);
     ApplyGearTemplate(player, playerSpec);

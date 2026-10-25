@@ -2,6 +2,7 @@
 #include "mod_level_boost_internal.h"
 #include "QuestDef.h"
 #include <algorithm>
+#include <unordered_set>
 
 ClassQuestPlan LevelBoost::BuildClassQuestPlan(Player* player, uint32 targetLevel) const
 {
@@ -113,30 +114,41 @@ void LevelBoost::CompleteClassQuests(Player* player, ClassQuestPlan const& plan)
     uint32 completedQuests = 0;
     uint32 grantedRewardEntries = 0;
     uint32 highestQuestLevel = 0;
+    std::unordered_set<uint32> processedRewardItems;
 
     for (PlannedClassQuest const& plannedQuest : plan.quests)
     {
         Quest const* quest = plannedQuest.quest;
         for (PlannedQuestReward const& reward : plannedQuest.rewards)
         {
+            // Gear templates and multiple class quests can point at the same item. Grant each
+            // reward item entry at most once per boost, and do not duplicate an item already owned.
+            if (!processedRewardItems.insert(reward.item_id).second)
+                continue;
+
+            uint32 const ownedCount = player->GetItemCount(reward.item_id);
+            if (ownedCount >= reward.count)
+                continue;
+
+            uint32 const missingCount = reward.count - ownedCount;
             ItemPosCountVec destination;
             uint32 noSpaceForCount = 0;
             InventoryResult const storageResult = player->CanStoreNewItem(
-                NULL_BAG, NULL_SLOT, destination, reward.item_id, reward.count, &noSpaceForCount);
+                NULL_BAG, NULL_SLOT, destination, reward.item_id, missingCount, &noSpaceForCount);
             if (storageResult == EQUIP_ERR_OK && noSpaceForCount == 0)
             {
                 if (Item* item = player->StoreNewItem(destination, reward.item_id, true))
                 {
-                    player->SendNewItem(item, reward.count, true, false);
+                    player->SendNewItem(item, missingCount, true, false);
                     ++grantedRewardEntries;
                     continue;
                 }
             }
 
-            player->SendItemRetrievalMail(reward.item_id, reward.count);
+            player->SendItemRetrievalMail(reward.item_id, missingCount);
             ++grantedRewardEntries;
             LOG_WARN("module", "Could not store class quest {} reward item {} x{} in {}'s inventory; sent it by mail.",
-                quest->GetQuestId(), reward.item_id, reward.count, player->GetName());
+                quest->GetQuestId(), reward.item_id, missingCount, player->GetName());
         }
 
         uint16 const questLogSlot = player->FindQuestSlot(quest->GetQuestId());
