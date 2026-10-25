@@ -6,7 +6,7 @@
 
 namespace
 {
-std::array<uint32, 1> constexpr IGNORED_GEAR_ITEM_ENTRIES = {2588};
+std::array<uint32, 2> constexpr IGNORED_GEAR_ITEM_ENTRIES = {2588, 4670};
 
 bool IsIgnoredGearItem(uint32 itemEntry)
 {
