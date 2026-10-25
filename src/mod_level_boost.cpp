@@ -706,16 +706,18 @@ bool LevelBoost::HasBoostClaim(Player* player)
     if (!oneTimeOnly)
         return false;
 
+    // Ignore stale claim rows when a deleted character's GUID is reused for a new character.
     QueryResult result = CharacterDatabase.Query(
-        "SELECT 1 FROM mod_level_boost_claim WHERE guid = {}",
-        player->GetGUID().GetCounter());
+        "SELECT 1 FROM mod_level_boost_claim WHERE guid = {} AND boosted_level <= {}",
+        player->GetGUID().GetCounter(), player->GetLevel());
     return static_cast<bool>(result);
 }
 
 void LevelBoost::RecordBoostClaim(Player* player, uint32 targetLevel)
 {
     CharacterDatabase.Execute(
-        "INSERT IGNORE INTO mod_level_boost_claim (guid, boosted_level, claim_time) VALUES ({}, {}, UNIX_TIMESTAMP())",
+        "INSERT INTO mod_level_boost_claim (guid, boosted_level, claim_time) VALUES ({}, {}, UNIX_TIMESTAMP()) "
+        "ON DUPLICATE KEY UPDATE boosted_level = VALUES(boosted_level), claim_time = VALUES(claim_time)",
         player->GetGUID().GetCounter(), targetLevel);
 }
 
