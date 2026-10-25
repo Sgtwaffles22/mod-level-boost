@@ -7,8 +7,6 @@
 #include "ScriptMgr.h"
 #include "Creature.h"
 #include "ObjectMgr.h"
-#include "Player.h"
-#include "ScriptedGossip.h"
 #include "Chat.h"
 #include "Pet.h"
 #include "Config.h"
