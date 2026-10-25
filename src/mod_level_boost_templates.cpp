@@ -68,6 +68,18 @@ ItemTemplate const* FindPaladinRetributionTwoHandWeapon(Player* player)
     return bestWeapon;
 }
 
+bool IsRogueOffhandWeapon(ItemTemplate const* itemTemplate)
+{
+    if (!itemTemplate || itemTemplate->Class != ITEM_CLASS_WEAPON ||
+        (itemTemplate->InventoryType != INVTYPE_WEAPON && itemTemplate->InventoryType != INVTYPE_WEAPONOFFHAND))
+        return false;
+
+    return itemTemplate->SubClass == ITEM_SUBCLASS_WEAPON_MACE ||
+        itemTemplate->SubClass == ITEM_SUBCLASS_WEAPON_SWORD ||
+        itemTemplate->SubClass == ITEM_SUBCLASS_WEAPON_FIST ||
+        itemTemplate->SubClass == ITEM_SUBCLASS_WEAPON_DAGGER;
+}
+
 ItemTemplate const* FindOffhandItem(Player* player, uint32 mainHandEntry)
 {
     auto const* itemTemplates = sObjectMgr->GetItemTemplateStore();
@@ -77,16 +89,10 @@ ItemTemplate const* FindOffhandItem(Player* player, uint32 mainHandEntry)
     ItemTemplate const* bestOffhandItem = nullptr;
     for (auto const& [itemId, candidate] : *itemTemplates)
     {
-        bool const isRogueWeaponSubclass = candidate.SubClass == ITEM_SUBCLASS_WEAPON_MACE ||
-            candidate.SubClass == ITEM_SUBCLASS_WEAPON_SWORD ||
-            candidate.SubClass == ITEM_SUBCLASS_WEAPON_FIST ||
-            candidate.SubClass == ITEM_SUBCLASS_WEAPON_DAGGER;
-        bool const isRogueOffhandWeapon = player->getClass() == CLASS_ROGUE &&
-            candidate.Class == ITEM_CLASS_WEAPON && isRogueWeaponSubclass &&
-            (candidate.InventoryType == INVTYPE_WEAPON || candidate.InventoryType == INVTYPE_WEAPONOFFHAND);
-        bool const isShield = candidate.Class == ITEM_CLASS_ARMOR &&
+        bool const isRogueOffhandWeapon = player->getClass() == CLASS_ROGUE && IsRogueOffhandWeapon(&candidate);
+        bool const isShield = player->getClass() != CLASS_ROGUE && candidate.Class == ITEM_CLASS_ARMOR &&
             candidate.SubClass == ITEM_SUBCLASS_ARMOR_SHIELD && candidate.InventoryType == INVTYPE_SHIELD;
-        bool const isHoldable = candidate.InventoryType == INVTYPE_HOLDABLE;
+        bool const isHoldable = player->getClass() != CLASS_ROGUE && candidate.InventoryType == INVTYPE_HOLDABLE;
 
         if (itemId == mainHandEntry || (!isRogueOffhandWeapon && !isShield && !isHoldable) ||
             LevelBoostInternal::HasProfessionSkillRequirement(&candidate) || candidate.ItemLevel > 22 ||
@@ -332,16 +338,18 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
         {
             Item* mainHand = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
             rogueMainHandEntry = mainHand ? mainHand->GetEntry() : 0;
-            if (itemEntry == rogueMainHandEntry)
+            if (!IsRogueOffhandWeapon(itemTemplate) || itemEntry == rogueMainHandEntry)
             {
                 ItemTemplate const* alternative = FindOffhandItem(player, rogueMainHandEntry);
                 if (!alternative)
                 {
-                    LOG_WARN("module", "No distinct off-hand weapon could be found for Rogue {}.", player->GetName());
+                    LOG_WARN("module", "No valid distinct off-hand weapon could be found for Rogue {}.", player->GetName());
                     continue;
                 }
                 itemTemplate = alternative;
                 itemEntry = alternative->ItemId;
+                LOG_INFO("module", "Replacing invalid Rogue off-hand template item with weapon {} for {}.",
+                    itemEntry, player->GetName());
             }
         }
         else if (LevelBoostInternal::HasProfessionSkillRequirement(itemTemplate))
