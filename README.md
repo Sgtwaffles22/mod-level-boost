@@ -15,17 +15,22 @@ Bags.Enable = 1
 Bags.Item = 4240
 Bags.Count = 4
 ClassQuests.Enable = 1
+LearnSpells.Enable = 1
 ```
 
-`LevelBoost.Level` accepts levels from 1 through the server's `MaxPlayerLevel`; the module clamps the configured value to that range. `LevelBoost.Gold` is in whole gold: 1g is 10,000 copper, so `100` grants 100g (1,000,000 copper) and `0` grants none. The grant respects the core's money cap. ClassQuests.Enable defaults to 1. Boost previews show the target level, actual gold grant, class quest count, reward entry count, and quests left incomplete. Fixed item rewards are granted; a choice reward is selected only when its first usable option matches the character's class, race, faction, and target level. If no choice item is usable, that quest stays incomplete. Quests with unsupported non-item rewards, such as spells, reputation, honor, titles, bonus talents, arena points, or reward mail, are also left incomplete and logged so they can still be completed normally. Quest XP and money are not granted. Reward items are mailed if the full reward does not fit in the character's inventory.
+`LevelBoost.Level` accepts levels from 1 through the server's `MaxPlayerLevel`; the module clamps the configured value to that range. `LevelBoost.Gold` is in whole gold: 1g is 10,000 copper, so `100` grants 100g (1,000,000 copper) and `0` grants none. The grant respects the core's money cap. ClassQuests.Enable defaults to 1. The boost marks all eligible non-repeatable class quests through the target level as rewarded, regardless of reward type. Fixed item rewards and the first usable choice item are granted; a quest is still marked rewarded if an item reward is invalid or unavailable. Learnable quest reward spells are granted when their availability conditions match the character. Quest XP and money are not granted. Reward items are mailed if the full reward does not fit in the character's inventory.
 
 `Bags.Item` defaults to item 4240 (Woolen Bag), an 8-slot bag, and `Bags.Count` defaults to four. The module equips bags in the character's four bag slots (19–22), filling empty slots first; bags that cannot be equipped are sent by mail. This gives a level-15 character up to 32 extra inventory slots without using higher-level bags.
+
+`LearnSpells.Enable` defaults to 1, so the boost teaches spells in the `mod_boost_class_spells` table up to the target level. Apply `data/sql/db-world/base/class_spells_table.sql` to create and populate that table. The boost logs the number of spells learned, already known, skipped for missing prerequisites, and failed. A server config value of `LearnSpells.Enable = 0` overrides the default and disables this feature.
+
+When `LevelBoost.OneTimeOnly = 1`, talking to the boost NPC again for a character with a prior claim rechecks eligible class quests and missing class spells. This lets characters boosted before these features were enabled receive missed quest completions and spells.
 
 ## Starter templates
 
 The world database SQL creates generic level-15 templates for all 27 class/spec combinations. Apply the module's base world SQL to install them and the starting NPC text. Apply `data/sql/db-characters/base/level_boost_claim.sql` to install the one-time claim table when `LevelBoost.OneTimeOnly = 1` (the default).
 
-- Gear is selected from the core's `item_template` table, limited to class- and race-compatible items with a required level of 15 or lower.
+- Gear is selected from the core's `item_template` table, limited to class- and race-compatible items with a required level of 15 or lower and no profession skill requirement. Existing templates that contain profession-gated items are replaced at boost time with the best matching profession-free item available; if none is found, that equipment slot is skipped and logged.
 - Talents spend six points in the selected tree's first tier. Any points left at a higher configured boost level remain available.
 - One class-appropriate minor glyph is equipped in the level-15 glyph slot.
 
@@ -33,7 +38,7 @@ The gear and talent starter data is aimed at level 15. For a different target, b
 
 ## Boost flow
 
-After choosing a specialization, the gossip menu shows a preview with a confirm button. Each character can claim the boost once by default. Set LevelBoost.OneTimeOnly to 0 to allow repeat claims.
+Choosing a specialization applies the boost immediately. Each character can claim the boost once by default. Set LevelBoost.OneTimeOnly to 0 to allow repeat claims.
 
 ## Commands
 

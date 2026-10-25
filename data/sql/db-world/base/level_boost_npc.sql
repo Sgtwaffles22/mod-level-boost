@@ -10,8 +10,6 @@ UPDATE `creature_template` SET `ScriptName` = 'BoostNPC_Template' WHERE `entry` 
 UPDATE `creature_template` SET `ScriptName` = 'BoostNPC_Template' WHERE `entry` = 10176; -- Kaltunk (Orc/Troll)
 UPDATE `creature_template` SET `ScriptName` = 'BoostNPC_Template' WHERE `entry` = 2980;  -- Grull Hawkwind (Tauren)
 
-set @confirm_text = 70001;
-DELETE FROM npc_text WHERE ID IN (@base_text, @confirm_text);
+DELETE FROM npc_text WHERE ID IN (@base_text, 70001);
 INSERT INTO npc_text (ID, text0_0) VALUES
-(@base_text, 'Choose your specialization:'),
-(@confirm_text, 'Review the boost preview and confirm to continue.');
+(@base_text, 'Choose your specialization:');

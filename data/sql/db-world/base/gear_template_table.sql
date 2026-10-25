@@ -147,6 +147,8 @@ FROM (
         WHERE it.`RequiredLevel` <= 15
           AND it.`ItemLevel` <= 22
           AND it.`Quality` BETWEEN 1 AND 2
+          AND it.`RequiredSkill` = 0
+          AND it.`RequiredSkillRank` = 0
           AND it.`InventoryType` = st.`inventory_type`
           AND (it.`AllowableClass` = -1 OR (it.`AllowableClass` & (1 << (cr.`class_id` - 1))) <> 0)
           AND (it.`AllowableRace` = -1 OR (it.`AllowableRace` & cr.`race_mask`) <> 0)

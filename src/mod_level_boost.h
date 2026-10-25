@@ -24,13 +24,12 @@
 const int ARROW_COUNT = 1000;
 const int BULLET_COUNT = 1000;
 const int BOOST_TEXT = 70000;
-const int BOOST_CONFIRM_TEXT = 70001;
-const uint32 GOSSIP_CONFIRM_BOOST_BASE = 200;
 
 enum GossipId
 {
     GOSSIP_MAIN_MENU = 0,
     GOSSIP_LEVEL_BOOST = 1,
+    GOSSIP_RECHECK_BOOST = 2,
     GOSSIP_GEAR = 100,
     GOSSIP_RESET_TALENTS = 999
 };
@@ -56,11 +55,8 @@ struct PlannedClassQuest
 struct ClassQuestPlan
 {
     std::vector<PlannedClassQuest> quests;
-    std::vector<Quest const*> unsupportedRewardQuests;
     std::vector<Quest const*> invalidRewardQuests;
     std::vector<Quest const*> unavailableChoiceRewardQuests;
-    uint32 rewardItemEntries = 0;
-    uint32 choiceRewardsSkipped = 0;
 };
 
 struct ClassSpells

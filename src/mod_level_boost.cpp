@@ -93,22 +93,6 @@ uint32 GetRaceMaskByName(std::string const& raceName)
     return 0;
 }
 
-bool HasUnsupportedNonItemRewards(Quest const* quest)
-{
-    if (quest->GetRewSpell() || quest->GetRewSpellCast() || quest->GetCharTitleId() ||
-        quest->GetBonusTalents() || quest->GetRewHonorAddition() ||
-        quest->GetRewHonorMultiplier() != 0.0f || quest->GetRewArenaPoints() ||
-        quest->GetRewMailTemplateId())
-        return true;
-
-    for (uint8 index = 0; index < QUEST_REPUTATIONS_COUNT; ++index)
-        if (quest->RewardFactionId[index] || quest->RewardFactionValueId[index] ||
-            quest->RewardFactionValueIdOverride[index])
-            return true;
-
-    return false;
-}
-
 bool IsChoiceItemUsableForBoost(Player* player, ItemTemplate const* itemTemplate, uint32 targetLevel)
 {
     if (!itemTemplate || itemTemplate->RequiredLevel > targetLevel ||
@@ -123,6 +107,42 @@ bool IsChoiceItemUsableForBoost(Player* player, ItemTemplate const* itemTemplate
         return false;
 
     return true;
+}
+
+bool HasProfessionSkillRequirement(ItemTemplate const* itemTemplate)
+{
+    return itemTemplate && (itemTemplate->RequiredSkill || itemTemplate->RequiredSkillRank);
+}
+
+ItemTemplate const* FindProfessionFreeAlternative(Player* player, ItemTemplate const* original)
+{
+    if (!original)
+        return nullptr;
+
+    auto const* itemTemplates = sObjectMgr->GetItemTemplateStore();
+    if (!itemTemplates)
+        return nullptr;
+
+    ItemTemplate const* bestAlternative = nullptr;
+    for (auto const& [itemId, candidate] : *itemTemplates)
+    {
+        if (candidate.Class != original->Class || candidate.SubClass != original->SubClass ||
+            candidate.InventoryType != original->InventoryType || HasProfessionSkillRequirement(&candidate) ||
+            candidate.RequiredLevel > player->GetLevel() || candidate.ItemLevel > 22 ||
+            candidate.Quality < 1 || candidate.Quality > 2 ||
+            (candidate.AllowableClass != -1 && (candidate.AllowableClass & player->getClassMask()) == 0) ||
+            (candidate.AllowableRace != -1 && (candidate.AllowableRace & player->getRaceMask()) == 0) ||
+            (candidate.HasFlag2(ITEM_FLAG2_FACTION_HORDE) && player->GetTeamId(true) != TEAM_HORDE) ||
+            (candidate.HasFlag2(ITEM_FLAG2_FACTION_ALLIANCE) && player->GetTeamId(true) != TEAM_ALLIANCE))
+            continue;
+
+        if (!bestAlternative || candidate.Quality > bestAlternative->Quality ||
+            (candidate.Quality == bestAlternative->Quality && candidate.ItemLevel > bestAlternative->ItemLevel) ||
+            (candidate.Quality == bestAlternative->Quality && candidate.ItemLevel == bestAlternative->ItemLevel && itemId < bestAlternative->ItemId))
+            bestAlternative = &candidate;
+    }
+
+    return bestAlternative;
 }
 }
 
@@ -221,7 +241,7 @@ void LevelBoost::LoadSpellContainer()
 
     if (!result)
     {
-        LOG_WARN("server.loading", ">> Loaded 0 spell templates");
+        LOG_WARN("server.loading", ">> Loaded 0 spell templates from mod_boost_class_spells; apply class_spells_table.sql and reload Level Boost templates.");
         return;
     }
 
@@ -365,21 +385,44 @@ void LevelBoost::AddStarterBags(Player* player)
 void LevelBoost::LearnSpellsForLevel(Player* player)
 {
     if (!learnSpells)
-        return;
-
-    for (auto& classSpell : classSpellsList)
     {
-        if (player->getClass() == classSpell.class_id && player->GetLevel() >= classSpell.required_level)
-        {
-            if (classSpell.required_spell == 0 || player->HasSpell(classSpell.required_spell))
-            {
-                if (!player->HasSpell(classSpell.spell_id))
-                {
-                    player->learnSpell(classSpell.spell_id);
-                }
-            }
-        }
+        LOG_WARN("module", "Class spell learning is disabled for {}; set LearnSpells.Enable = 1 and reload the configuration before boosting.", player->GetName());
+        return;
     }
+
+    uint32 eligibleSpells = 0;
+    uint32 learnedSpells = 0;
+    uint32 alreadyKnownSpells = 0;
+    uint32 missingPrerequisites = 0;
+    uint32 failedSpells = 0;
+
+    for (ClassSpells const& classSpell : classSpellsList)
+    {
+        if (player->getClass() != classSpell.class_id || player->GetLevel() < classSpell.required_level)
+            continue;
+
+        ++eligibleSpells;
+        if (classSpell.required_spell && !player->HasSpell(classSpell.required_spell))
+        {
+            ++missingPrerequisites;
+            continue;
+        }
+
+        if (player->HasSpell(classSpell.spell_id))
+        {
+            ++alreadyKnownSpells;
+            continue;
+        }
+
+        player->learnSpell(classSpell.spell_id);
+        if (player->HasSpell(classSpell.spell_id))
+            ++learnedSpells;
+        else
+            ++failedSpells;
+    }
+
+    LOG_INFO("module", ">> Class spell grant for {} at level {}: learned {} of {} eligible spells ({} already known, {} missing prerequisites, {} failed).",
+        player->GetName(), player->GetLevel(), learnedSpells, eligibleSpells, alreadyKnownSpells, missingPrerequisites, failedSpells);
 }
 
 void LevelBoost::LearnProficienciesForLevel(Player* player)
@@ -446,7 +489,27 @@ void LevelBoost::HandleBoost(Player* player, Creature* creature, std::string con
 {
     if (oneTimeOnly && HasBoostClaim(player))
     {
-        player->GetSession()->SendAreaTriggerMessage("This character has already claimed a level boost.");
+        bool recheckedBoostRewards = false;
+        if (completeClassQuests)
+        {
+            ClassQuestPlan const questPlan = BuildClassQuestPlan(player, GetTargetLevel());
+            CompleteClassQuests(player, questPlan);
+            recheckedBoostRewards = true;
+        }
+
+        if (learnSpells)
+        {
+            LearnSpellsForLevel(player);
+            recheckedBoostRewards = true;
+        }
+
+        if (recheckedBoostRewards)
+        {
+            player->SaveToDB(false, false);
+            player->GetSession()->SendAreaTriggerMessage("This character already claimed the boost. Eligible class quest rewards and missing class spells were checked.");
+        }
+        else
+            player->GetSession()->SendAreaTriggerMessage("This character has already claimed a level boost.");
         return;
     }
 
@@ -648,6 +711,12 @@ ClassQuestPlan LevelBoost::BuildClassQuestPlan(Player* player, uint32 targetLeve
         if (allowableRaces && !(allowableRaces & playerRaceMask))
             continue;
 
+        // Spell reward quests can have race-specific availability conditions even when their
+        // allowable-race mask is empty (for example, racial versions of class spell quests).
+        // Respect those conditions so a boost cannot learn another race's reward spell.
+        if ((quest->GetRewSpell() || quest->GetRewSpellCast()) && !player->SatisfyQuestConditions(quest, false))
+            continue;
+
         if (quest->IsRepeatable() || quest->IsDailyOrWeekly() || quest->IsMonthly() ||
             quest->IsSeasonal() || quest->IsPVPQuest() || quest->GetTimeAllowed() > 0)
             continue;
@@ -655,12 +724,6 @@ ClassQuestPlan LevelBoost::BuildClassQuestPlan(Player* player, uint32 targetLeve
         uint32 const questId = quest->GetQuestId();
         if (player->IsQuestRewarded(questId))
             continue;
-
-        if (HasUnsupportedNonItemRewards(quest))
-        {
-            plan.unsupportedRewardQuests.push_back(quest);
-            continue;
-        }
 
         PlannedClassQuest plannedQuest;
         plannedQuest.quest = quest;
@@ -676,17 +739,14 @@ ClassQuestPlan LevelBoost::BuildClassQuestPlan(Player* player, uint32 targetLeve
             if (!sObjectMgr->GetItemTemplate(itemId))
             {
                 invalidReward = true;
-                break;
+                continue;
             }
 
             plannedQuest.rewards.push_back({ itemId, count });
         }
 
         if (invalidReward)
-        {
             plan.invalidRewardQuests.push_back(quest);
-            continue;
-        }
 
         bool hasChoiceReward = false;
         bool selectedChoiceReward = false;
@@ -709,12 +769,9 @@ ClassQuestPlan LevelBoost::BuildClassQuestPlan(Player* player, uint32 targetLeve
 
         if (hasChoiceReward && !selectedChoiceReward)
         {
-            ++plan.choiceRewardsSkipped;
             plan.unavailableChoiceRewardQuests.push_back(quest);
-            continue;
         }
 
-        plan.rewardItemEntries += static_cast<uint32>(plannedQuest.rewards.size());
         plan.quests.push_back(plannedQuest);
     }
 
@@ -750,10 +807,30 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
             continue;
 
         ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(gearTemplate.item_entry);
-        if (!itemTemplate || itemTemplate->RequiredLevel > player->GetLevel())
+        if (!itemTemplate)
             continue;
 
-        player->EquipNewItem(gearTemplate.equipment_slot, gearTemplate.item_entry, true);
+        uint32 itemEntry = gearTemplate.item_entry;
+        if (HasProfessionSkillRequirement(itemTemplate))
+        {
+            ItemTemplate const* alternative = FindProfessionFreeAlternative(player, itemTemplate);
+            if (!alternative)
+            {
+                LOG_ERROR("module", "Gear item {} for {} / {} requires profession skill {} rank {}, and no suitable alternative was found.",
+                    itemEntry, playerClass, playerSpec, itemTemplate->RequiredSkill, itemTemplate->RequiredSkillRank);
+                continue;
+            }
+
+            LOG_WARN("module", "Replacing profession-gated gear item {} with {} for {} / {} / {}.",
+                itemEntry, alternative->ItemId, playerClass, playerSpec, playerRace);
+            itemEntry = alternative->ItemId;
+            itemTemplate = alternative;
+        }
+
+        if (itemTemplate->RequiredLevel > player->GetLevel())
+            continue;
+
+        player->EquipNewItem(gearTemplate.equipment_slot, itemEntry, true);
     }
 }
 
@@ -796,14 +873,11 @@ void LevelBoost::ApplyTalentTemplate(Player* player, std::string const& playerSp
 
 void LevelBoost::CompleteClassQuests(Player* player, ClassQuestPlan const& plan)
 {
-    for (Quest const* quest : plan.unsupportedRewardQuests)
-        LOG_WARN("module", "Leaving class quest {} ({}) incomplete because it has non-item rewards the boost does not grant.", quest->GetQuestId(), quest->GetTitle());
-
     for (Quest const* quest : plan.invalidRewardQuests)
-        LOG_WARN("module", "Leaving class quest {} ({}) incomplete because one of its fixed item rewards is invalid.", quest->GetQuestId(), quest->GetTitle());
+        LOG_WARN("module", "Marking class quest {} ({}) rewarded; one or more invalid fixed item rewards were skipped.", quest->GetQuestId(), quest->GetTitle());
 
     for (Quest const* quest : plan.unavailableChoiceRewardQuests)
-        LOG_WARN("module", "Leaving class quest {} ({}) incomplete because none of its choice rewards is usable by {}.", quest->GetQuestId(), quest->GetTitle(), player->GetName());
+        LOG_WARN("module", "Marking class quest {} ({}) rewarded for {}; no usable choice item was granted.", quest->GetQuestId(), quest->GetTitle(), player->GetName());
 
     uint32 completedQuests = 0;
     uint32 grantedRewardEntries = 0;
@@ -841,6 +915,7 @@ void LevelBoost::CompleteClassQuests(Player* player, ClassQuestPlan const& plan)
         if (player->GetQuestStatus(quest->GetQuestId()) != QUEST_STATUS_NONE)
             player->RemoveActiveQuest(quest->GetQuestId(), false);
 
+        player->learnQuestRewardedSpells(quest);
         player->SetRewardedQuest(quest->GetQuestId());
         player->SendQuestUpdate(quest->GetQuestId());
         ++completedQuests;
@@ -850,7 +925,7 @@ void LevelBoost::CompleteClassQuests(Player* player, ClassQuestPlan const& plan)
     }
 
     if (completedQuests)
-        LOG_INFO("module", ">> Marked {} class quests through level {} as rewarded for {} and granted {} quest reward entries.",
+        LOG_INFO("module", ">> Marked {} eligible class quests through level {} as rewarded for {} and granted {} quest item entries.",
             completedQuests, highestQuestLevel, player->GetName(), grantedRewardEntries);
 }
 
@@ -864,9 +939,8 @@ bool LevelBoost::ApplyFullTemplate(Player* player, std::string const& playerSpec
     }
 
     uint32 const targetLevel = GetTargetLevel();
-    ClassQuestPlan const questPlan = BuildClassQuestPlan(player, targetLevel);
-
     player->GiveLevel(static_cast<uint8>(targetLevel));
+    ClassQuestPlan const questPlan = BuildClassQuestPlan(player, targetLevel);
     DestroyGear(player);
     ApplyGearTemplate(player, playerSpec);
     AddStarterBags(player);
@@ -962,14 +1036,24 @@ public:
     {
         ClearGossipMenuFor(player);
 
-        if (!sLevelBoost->levelBoost || player->GetLevel() != 1)
+        if (!sLevelBoost->levelBoost)
             return false;
 
         if (sLevelBoost->HasBoostClaim(player))
         {
-            player->GetSession()->SendAreaTriggerMessage("This character has already claimed a level boost.");
-            return false;
+            if (!sLevelBoost->completeClassQuests && !sLevelBoost->learnSpells)
+            {
+                player->GetSession()->SendAreaTriggerMessage("This character has already claimed a level boost.");
+                return false;
+            }
+
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Update eligible class quests and missing spells", GOSSIP_SENDER_MAIN, GOSSIP_RECHECK_BOOST);
+            SendGossipMenuFor(player, BOOST_TEXT, creature->GetGUID());
+            return true;
         }
+
+        if (player->GetLevel() != 1)
+            return false;
 
         if (creature->IsQuestGiver())
             player->PrepareQuestMenu(creature->GetGUID());
@@ -1013,7 +1097,24 @@ public:
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action)
     {
-        if (!sLevelBoost->levelBoost || player->GetLevel() != 1 || sender != GOSSIP_SENDER_MAIN)
+        if (!sLevelBoost->levelBoost || sender != GOSSIP_SENDER_MAIN)
+            return false;
+
+        if (sLevelBoost->HasBoostClaim(player))
+        {
+            if (action == GOSSIP_RECHECK_BOOST)
+            {
+                sLevelBoost->HandleBoost(player, creature, "");
+                return true;
+            }
+
+            if (action == GOSSIP_MAIN_MENU)
+                return OnGossipHello(player, creature);
+
+            return false;
+        }
+
+        if (player->GetLevel() != 1)
             return false;
 
         if (action == GOSSIP_MAIN_MENU)
@@ -1032,23 +1133,6 @@ public:
             SpecializationOption const* option = FindSpecializationOption(action - GOSSIP_GEAR);
             if (!option || option->classId != player->getClass())
                 return false;
-
-            ShowBoostPreview(player, creature, option);
-            return true;
-        }
-
-        if (action > GOSSIP_CONFIRM_BOOST_BASE &&
-            action <= GOSSIP_CONFIRM_BOOST_BASE + SpecializationOptionCount)
-        {
-            SpecializationOption const* option = FindSpecializationOption(action - GOSSIP_CONFIRM_BOOST_BASE);
-            if (!option || option->classId != player->getClass())
-                return false;
-
-            if (sLevelBoost->HasBoostClaim(player))
-            {
-                player->GetSession()->SendAreaTriggerMessage("This character has already claimed a level boost.");
-                return false;
-            }
 
             sLevelBoost->HandleBoost(player, creature, option->specName);
             return true;
@@ -1074,45 +1158,6 @@ public:
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back...", GOSSIP_SENDER_MAIN, GOSSIP_MAIN_MENU);
     }
 
-    void ShowBoostPreview(Player* player, Creature* creature, SpecializationOption const* option)
-    {
-        if (sLevelBoost->HasBoostClaim(player))
-        {
-            player->GetSession()->SendAreaTriggerMessage("This character has already claimed a level boost.");
-            return;
-        }
-
-        if (!sLevelBoost->TemplateExists(player, option->specName))
-        {
-            player->GetSession()->SendAreaTriggerMessage("There's no templates for %s specialization and race yet.", option->specName);
-            ClearGossipMenuFor(player);
-            AddOptionsForClass(player);
-            SendGossipMenuFor(player, BOOST_TEXT, creature->GetGUID());
-            return;
-        }
-
-        uint32 const targetLevel = sLevelBoost->GetTargetLevel();
-        ClassQuestPlan const plan = sLevelBoost->BuildClassQuestPlan(player, targetLevel);
-        uint32 const moneyToGrant = sLevelBoost->GetMoneyToGrant(player);
-        uint32 const questCount = static_cast<uint32>(plan.quests.size());
-        uint32 const unsupportedCount = static_cast<uint32>(plan.unsupportedRewardQuests.size() + plan.invalidRewardQuests.size());
-        uint32 const bagCount = sLevelBoost->giveBags ? std::min(sLevelBoost->starterBagCount,
-            static_cast<uint32>(INVENTORY_SLOT_BAG_END - INVENTORY_SLOT_BAG_START)) : 0;
-        ItemTemplate const* bagTemplate = bagCount ? sObjectMgr->GetItemTemplate(sLevelBoost->starterBagItem) : nullptr;
-        uint32 const bagSlots = bagTemplate && bagTemplate->InventoryType == INVTYPE_BAG ? bagTemplate->ContainerSlots : 0;
-
-        player->GetSession()->SendAreaTriggerMessage(
-            "Preview: %s, level %u, %u gold + %u copper, %u bags (%u slots each), %u class quests, %u reward entries; %u unsupported and %u without usable choices stay open.",
-            option->specName, targetLevel, moneyToGrant / 10000U, moneyToGrant % 10000U,
-            bagCount, bagSlots, questCount, plan.rewardItemEntries, unsupportedCount, plan.choiceRewardsSkipped);
-
-        ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Confirm this boost", GOSSIP_SENDER_MAIN,
-            GOSSIP_CONFIRM_BOOST_BASE + option->id);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Choose a different specialization", GOSSIP_SENDER_MAIN,
-            GOSSIP_LEVEL_BOOST);
-        SendGossipMenuFor(player, BOOST_CONFIRM_TEXT, creature->GetGUID());
-    }
 };
 
 class BoostNPC_World : public WorldScript
@@ -1163,6 +1208,7 @@ public:
         sLevelBoost->destroyGear = sConfigMgr->GetOption<bool>("DestroyGear.Enable", true);
         sLevelBoost->completeClassQuests = sConfigMgr->GetOption<bool>("ClassQuests.Enable", true);
 
+        LOG_INFO("module", ">> Class spell learning is {}.", sLevelBoost->learnSpells ? "enabled" : "disabled");
         LOG_INFO("module", ">> Loaded Level Boost Config in {} ms.", GetMSTimeDiffToNow(oldTime));
     }
 };
@@ -1272,6 +1318,12 @@ public:
             if (item->RequiredLevel > targetLevel)
             {
                 handler->PSendSysMessage("Item {} requires level {}, above the configured boost level {}.", gear.item_entry, item->RequiredLevel, targetLevel);
+                ++warnings;
+            }
+            if (HasProfessionSkillRequirement(item))
+            {
+                handler->PSendSysMessage("Item {} requires profession skill {} rank {}; the boost will substitute matching gear when possible.",
+                    gear.item_entry, item->RequiredSkill, item->RequiredSkillRank);
                 ++warnings;
             }
         }

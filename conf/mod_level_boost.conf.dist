@@ -57,9 +57,9 @@ Bags.Count = 4
 
 #
 #    ClassQuests.Enable
-#        Description: Marks eligible class quests as rewarded and grants item rewards. If no choice item is usable,
-#                     or a quest has unsupported non-item rewards, it is left incomplete and shown in the preview.
-#                     Quest XP and money are not granted.
+#        Description: Marks all eligible non-repeatable class quests through the target level as rewarded, regardless of reward type.
+#                     Grants valid item rewards and learnable quest spells. A quest is still marked rewarded if its item reward
+#                     is invalid or unavailable. Quest XP and money are not granted.
 #        Default:     1 - Enabled
 #                     0 - Disabled
 #
@@ -68,12 +68,13 @@ ClassQuests.Enable = 1
 
 #
 #    LearnSpells.Enable
-#        Description: Allows the boosted character to automatically learn spells appropriate for their class and level when the boost is applied.
+#        Description: Learns class spells from the mod_boost_class_spells table that match the boosted character's class and level.
+#                     Apply class_spells_table.sql to populate this table.
 #        Default:     1 - Enabled
 #                     0 - Disabled
 #
 
-LearnSpells.Enable = 0
+LearnSpells.Enable = 1
 
 #
 #    LearnProficiencies.Enable
