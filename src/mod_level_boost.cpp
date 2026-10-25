@@ -93,7 +93,14 @@ uint32 GetRaceMaskByName(std::string const& raceName)
     return 0;
 }
 
-bool IsChoiceItemUsableForBoost(Player* player, ItemTemplate const* itemTemplate, uint32 targetLevel)
+uint32 const ITEM_RELIC_OF_THE_DEAD_ENTRY = 3004;
+
+bool IsExcludedBoostGearItem(uint32 itemEntry)
+{
+    return itemEntry == ITEM_RELIC_OF_THE_DEAD_ENTRY;
+}
+
+bool IsItemUsableForBoost(Player* player, ItemTemplate const* itemTemplate, uint32 targetLevel)
 {
     if (!itemTemplate || itemTemplate->RequiredLevel > targetLevel ||
         (itemTemplate->AllowableClass & player->getClassMask()) == 0 ||
@@ -114,7 +121,7 @@ bool HasProfessionSkillRequirement(ItemTemplate const* itemTemplate)
     return itemTemplate && (itemTemplate->RequiredSkill || itemTemplate->RequiredSkillRank);
 }
 
-ItemTemplate const* FindProfessionFreeAlternative(Player* player, ItemTemplate const* original)
+ItemTemplate const* FindGearAlternative(Player* player, ItemTemplate const* original)
 {
     if (!original)
         return nullptr;
@@ -127,7 +134,8 @@ ItemTemplate const* FindProfessionFreeAlternative(Player* player, ItemTemplate c
     for (auto const& [itemId, candidate] : *itemTemplates)
     {
         if (candidate.Class != original->Class || candidate.SubClass != original->SubClass ||
-            candidate.InventoryType != original->InventoryType || HasProfessionSkillRequirement(&candidate) ||
+            candidate.InventoryType != original->InventoryType || candidate.ItemId == ITEM_RELIC_OF_THE_DEAD_ENTRY ||
+            HasProfessionSkillRequirement(&candidate) ||
             candidate.RequiredLevel > player->GetLevel() || candidate.ItemLevel > 22 ||
             candidate.Quality < 1 || candidate.Quality > 2 ||
             (candidate.AllowableClass != -1 && (candidate.AllowableClass & player->getClassMask()) == 0) ||
@@ -143,6 +151,36 @@ ItemTemplate const* FindProfessionFreeAlternative(Player* player, ItemTemplate c
     }
 
     return bestAlternative;
+}
+
+ItemTemplate const* FindPaladinRetributionTwoHandWeapon(Player* player)
+{
+    auto const* itemTemplates = sObjectMgr->GetItemTemplateStore();
+    if (!itemTemplates)
+        return nullptr;
+
+    ItemTemplate const* bestWeapon = nullptr;
+    for (auto const& [itemId, candidate] : *itemTemplates)
+    {
+        bool const isPaladinWeaponSubclass = candidate.SubClass == ITEM_SUBCLASS_WEAPON_AXE2 ||
+            candidate.SubClass == ITEM_SUBCLASS_WEAPON_MACE2 ||
+            candidate.SubClass == ITEM_SUBCLASS_WEAPON_POLEARM ||
+            candidate.SubClass == ITEM_SUBCLASS_WEAPON_SWORD2;
+
+        if (candidate.Class != ITEM_CLASS_WEAPON || candidate.InventoryType != INVTYPE_2HWEAPON ||
+            !isPaladinWeaponSubclass || candidate.ItemId == ITEM_RELIC_OF_THE_DEAD_ENTRY ||
+            HasProfessionSkillRequirement(&candidate) || candidate.ItemLevel > 22 ||
+            candidate.Quality < 1 || candidate.Quality > 2 ||
+            !IsItemUsableForBoost(player, &candidate, player->GetLevel()))
+            continue;
+
+        if (!bestWeapon || candidate.Quality > bestWeapon->Quality ||
+            (candidate.Quality == bestWeapon->Quality && candidate.ItemLevel > bestWeapon->ItemLevel) ||
+            (candidate.Quality == bestWeapon->Quality && candidate.ItemLevel == bestWeapon->ItemLevel && itemId < bestWeapon->ItemId))
+            bestWeapon = &candidate;
+    }
+
+    return bestWeapon;
 }
 }
 
@@ -759,7 +797,7 @@ ClassQuestPlan LevelBoost::BuildClassQuestPlan(Player* player, uint32 targetLeve
 
             hasChoiceReward = true;
             ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
-            if (!count || !IsChoiceItemUsableForBoost(player, itemTemplate, targetLevel))
+            if (!count || !IsItemUsableForBoost(player, itemTemplate, targetLevel))
                 continue;
 
             plannedQuest.rewards.push_back({ itemId, count });
@@ -799,6 +837,13 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
 {
     std::string const playerClass = GetClassString(player);
     std::string const playerRace = GetRaceString(player);
+    bool const isPaladinRetribution = playerClass == "Paladin" && playerSpec == "Retribution";
+    ItemTemplate const* retributionWeapon = isPaladinRetribution ? FindPaladinRetributionTwoHandWeapon(player) : nullptr;
+    bool retributionWeaponEquipped = false;
+
+    if (isPaladinRetribution && !retributionWeapon)
+        LOG_WARN("module", "No eligible level {} two-handed weapon was found for Paladin Retribution {}.", player->GetLevel(), player->GetName());
+
     for (GearTemplate const& gearTemplate : gearTemplateList)
     {
         if (playerClass != gearTemplate.player_class ||
@@ -806,22 +851,30 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
             playerRace != gearTemplate.player_race)
             continue;
 
-        ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(gearTemplate.item_entry);
-        if (!itemTemplate)
+        if (isPaladinRetribution && gearTemplate.equipment_slot == EQUIPMENT_SLOT_OFFHAND && retributionWeapon)
             continue;
 
+        ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(gearTemplate.item_entry);
         uint32 itemEntry = gearTemplate.item_entry;
-        if (HasProfessionSkillRequirement(itemTemplate))
+        if (isPaladinRetribution && gearTemplate.equipment_slot == EQUIPMENT_SLOT_MAINHAND && retributionWeapon)
         {
-            ItemTemplate const* alternative = FindProfessionFreeAlternative(player, itemTemplate);
+            itemEntry = retributionWeapon->ItemId;
+            itemTemplate = retributionWeapon;
+            LOG_INFO("module", "Using two-handed weapon {} for Paladin Retribution {}.", itemEntry, player->GetName());
+        }
+        else if (!itemTemplate)
+            continue;
+        else if (HasProfessionSkillRequirement(itemTemplate) || IsExcludedBoostGearItem(itemEntry))
+        {
+            ItemTemplate const* alternative = FindGearAlternative(player, itemTemplate);
             if (!alternative)
             {
-                LOG_ERROR("module", "Gear item {} for {} / {} requires profession skill {} rank {}, and no suitable alternative was found.",
+                LOG_ERROR("module", "Gear item {} for {} / {} is excluded or requires profession skill {} rank {}, and no suitable alternative was found.",
                     itemEntry, playerClass, playerSpec, itemTemplate->RequiredSkill, itemTemplate->RequiredSkillRank);
                 continue;
             }
 
-            LOG_WARN("module", "Replacing profession-gated gear item {} with {} for {} / {} / {}.",
+            LOG_WARN("module", "Replacing excluded or profession-gated gear item {} with {} for {} / {} / {}.",
                 itemEntry, alternative->ItemId, playerClass, playerSpec, playerRace);
             itemEntry = alternative->ItemId;
             itemTemplate = alternative;
@@ -831,6 +884,17 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
             continue;
 
         player->EquipNewItem(gearTemplate.equipment_slot, itemEntry, true);
+        if (isPaladinRetribution && gearTemplate.equipment_slot == EQUIPMENT_SLOT_MAINHAND && retributionWeapon)
+        {
+            Item* equippedWeapon = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+            retributionWeaponEquipped = equippedWeapon && equippedWeapon->GetEntry() == retributionWeapon->ItemId;
+        }
+    }
+
+    if (isPaladinRetribution && retributionWeapon && !retributionWeaponEquipped)
+    {
+        player->EquipNewItem(EQUIPMENT_SLOT_MAINHAND, retributionWeapon->ItemId, true);
+        LOG_INFO("module", "Equipped fallback two-handed weapon {} for Paladin Retribution {}.", retributionWeapon->ItemId, player->GetName());
     }
 }
 
@@ -1318,6 +1382,11 @@ public:
             if (item->RequiredLevel > targetLevel)
             {
                 handler->PSendSysMessage("Item {} requires level {}, above the configured boost level {}.", gear.item_entry, item->RequiredLevel, targetLevel);
+                ++warnings;
+            }
+            if (IsExcludedBoostGearItem(gear.item_entry))
+            {
+                handler->PSendSysMessage("Item {} is Relic of the Dead and will be replaced during the boost.", gear.item_entry);
                 ++warnings;
             }
             if (HasProfessionSkillRequirement(item))

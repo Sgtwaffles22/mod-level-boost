@@ -124,6 +124,7 @@ FROM (
         SELECT 12, 12, 'trinket' UNION ALL
         SELECT 14, 16, 'armor' UNION ALL
         SELECT 15, 13, 'weapon' UNION ALL
+        SELECT 15, 17, 'weapon' UNION ALL
         SELECT 15, 21, 'weapon' UNION ALL
         SELECT 16, 14, 'shield' UNION ALL
         SELECT 17, 15, 'ranged' UNION ALL
@@ -138,7 +139,15 @@ FROM (
             it.`entry` AS `item_entry`,
             ROW_NUMBER() OVER (
                 PARTITION BY cr.`player_class`, sp.`player_spec`, cr.`player_race`, st.`equipment_slot`
-                ORDER BY it.`Quality` DESC, it.`ItemLevel` DESC, it.`entry`
+                ORDER BY
+                    CASE
+                        WHEN cr.`player_class` = 'Paladin' AND sp.`player_spec` = 'Retribution'
+                             AND st.`equipment_slot` = 15 AND it.`InventoryType` = 17 THEN 0
+                        WHEN cr.`player_class` = 'Paladin' AND sp.`player_spec` = 'Retribution'
+                             AND st.`equipment_slot` = 15 THEN 1
+                        ELSE 0
+                    END,
+                    it.`Quality` DESC, it.`ItemLevel` DESC, it.`entry`
             ) AS `row_num`
         FROM class_races cr
         JOIN specs sp ON sp.`player_class` = cr.`player_class`
@@ -149,14 +158,18 @@ FROM (
           AND it.`Quality` BETWEEN 1 AND 2
           AND it.`RequiredSkill` = 0
           AND it.`RequiredSkillRank` = 0
+          AND it.`entry` <> 3004 -- Relic of the Dead
           AND it.`InventoryType` = st.`inventory_type`
+          AND (it.`InventoryType` <> 17 OR (cr.`player_class` = 'Paladin' AND sp.`player_spec` = 'Retribution'))
           AND (it.`AllowableClass` = -1 OR (it.`AllowableClass` & (1 << (cr.`class_id` - 1))) <> 0)
           AND (it.`AllowableRace` = -1 OR (it.`AllowableRace` & cr.`race_mask`) <> 0)
           AND (
                 (st.`item_kind` = 'armor' AND it.`class` = 4 AND it.`subclass` = cr.`armor_subclass`)
              OR (st.`item_kind` = 'trinket' AND it.`class` = 4)
              OR (st.`item_kind` = 'weapon' AND it.`class` = 2 AND FIND_IN_SET(it.`subclass`, cr.`weapon_subclasses`) > 0)
-             OR (st.`item_kind` = 'shield' AND cr.`can_shield` = 1 AND it.`class` = 4 AND it.`subclass` = 6)
+             OR (st.`item_kind` = 'shield' AND cr.`can_shield` = 1
+                 AND NOT (cr.`player_class` = 'Paladin' AND sp.`player_spec` = 'Retribution')
+                 AND it.`class` = 4 AND it.`subclass` = 6)
              OR (st.`item_kind` = 'ranged' AND it.`class` = 2 AND FIND_IN_SET(it.`subclass`, cr.`ranged_subclasses`) > 0)
              OR (st.`item_kind` = 'wand' AND cr.`player_class` IN ('Priest', 'Mage', 'Warlock') AND it.`class` = 2 AND it.`subclass` = 19)
           )

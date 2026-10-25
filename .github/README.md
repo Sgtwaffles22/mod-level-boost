@@ -30,7 +30,7 @@ When `LevelBoost.OneTimeOnly = 1`, talking to the boost NPC again for a characte
 
 The world database SQL creates generic level-15 templates for all 27 class/spec combinations. Apply the module's base world SQL to install them and the starting NPC text. Apply `data/sql/db-characters/base/level_boost_claim.sql` to install the one-time claim table when `LevelBoost.OneTimeOnly = 1` (the default).
 
-- Gear is selected from the core's `item_template` table, limited to class- and race-compatible items with a required level of 15 or lower and no profession skill requirement. Existing templates that contain profession-gated items are replaced at boost time with the best matching profession-free item available; if none is found, that equipment slot is skipped and logged.
+- Gear is selected from the core's `item_template` table, limited to class- and race-compatible items with a required level of 15 or lower and no profession skill requirement. Relic of the Dead is excluded. Paladin Retribution receives an eligible two-handed weapon, and the off-hand shield is omitted. The boost also replaces excluded or profession-gated items in existing templates when a matching alternative is available.
 - Talents spend six points in the selected tree's first tier. Any points left at a higher configured boost level remain available.
 - One class-appropriate minor glyph is equipped in the level-15 glyph slot.
 
