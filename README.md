@@ -1,4 +1,4 @@
-# <img src="icon.png" alt="" width="48" height="48" style="vertical-align:middle"> Level Boost
+# <img src="icon.png" alt="" width="64" height="64" style="vertical-align:middle"> Level Boost
 
 Level Boost is an AzerothCore module that lets a level-1 character choose a specialization and boost at a supported starting-area NPC. The default target is level 15, and the default grant is 100 gold.
 
