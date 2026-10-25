@@ -6,6 +6,17 @@
 
 namespace
 {
+std::array<uint32, 1> constexpr IGNORED_GEAR_ITEM_ENTRIES = {2588};
+
+bool IsIgnoredGearItem(uint32 itemEntry)
+{
+    for (uint32 ignoredItemEntry : IGNORED_GEAR_ITEM_ENTRIES)
+        if (itemEntry == ignoredItemEntry)
+            return true;
+
+    return false;
+}
+
 ItemTemplate const* FindGearAlternative(Player* player, ItemTemplate const* original)
 {
     if (!original)
@@ -18,7 +29,7 @@ ItemTemplate const* FindGearAlternative(Player* player, ItemTemplate const* orig
     ItemTemplate const* bestAlternative = nullptr;
     for (auto const& [itemId, candidate] : *itemTemplates)
     {
-        if (candidate.Class != original->Class || candidate.SubClass != original->SubClass ||
+        if (IsIgnoredGearItem(itemId) || candidate.Class != original->Class || candidate.SubClass != original->SubClass ||
             candidate.InventoryType != original->InventoryType || LevelBoostInternal::HasProfessionSkillRequirement(&candidate) ||
             candidate.RequiredLevel > player->GetLevel() || candidate.ItemLevel > 22 ||
             candidate.Quality < 1 || candidate.Quality > 2 ||
@@ -323,6 +334,13 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
 
         if (isPaladinRetribution && gearTemplate.equipment_slot == EQUIPMENT_SLOT_OFFHAND && retributionWeapon)
             continue;
+
+        if (IsIgnoredGearItem(gearTemplate.item_entry))
+        {
+            LOG_DEBUG("module", "Skipping ignored gear item {} for {} / {} / {} without replacement.",
+                gearTemplate.item_entry, playerClass, playerSpec, playerRace);
+            continue;
+        }
 
         ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(gearTemplate.item_entry);
         uint32 itemEntry = gearTemplate.item_entry;
