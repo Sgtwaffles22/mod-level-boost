@@ -1,10 +1,10 @@
-# Level 15 Boost
+# Level Boost
 
 ## Description
-"Level 15 Boost" is a module for AzerothCore that offers an optional level boost to level 15, available as a gossip option at each race's starting zone initial quest giver. This module is designed to enhance the player experience by providing a quick start option for players who wish to skip the early leveling phase.
+"Level Boost" is a module for AzerothCore that offers an optional level boost to level 15, available as a gossip option at each race's starting zone initial quest giver. This module is designed to enhance the player experience by providing a quick start option for players who wish to skip the early leveling phase.
 
 ## Features
-- Automatic boost to level 15 via a gossip option with the initial quest giver in each race's starting zone.
+- Automatic boost to any specified level via a gossip option with the initial quest giver in each race's starting zone.
 - Destruction of starting items and equipping players with appropriate gear, talents, and glyphs based on configuration.
 - Configurable options for enabling or disabling specific features like learning spells, proficiencies, talents, dual spec, and destroying gear.
 - Ability to reload tables and extract gear templates based on player's current gear.
