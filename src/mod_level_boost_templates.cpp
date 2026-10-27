@@ -1,23 +1,45 @@
 #include "mod_level_boost.h"
 #include "mod_level_boost_internal.h"
 #include "DBCStores.h"
-#include <limits>
+#include <algorithm>
 #include <array>
+#include <cctype>
+#include <limits>
+#include <string>
 
 namespace
 {
-std::array<uint32, 4> constexpr IGNORED_GEAR_ITEM_ENTRIES = {
+std::array<uint32, 9> constexpr IGNORED_GEAR_ITEM_ENTRIES = {
+    905,  // Explicitly ignored gear item
+    906,  // Tan Leather Shoulderpads (Test)
+    907,  // Black Mail Shoulderpads of Might (Test)
+    908,  // Plate Shoulderpad (Test)
+    909,  // Silver Mail Shoulderpads (Test)
     2588, // Deprecated Red Leather Mask
     3529, // Black Night Elf Helm
     4667, // Deprecated Battle Chain Pauldrons
     4670  // Deprecated Ancestral Mantle
 };
 
-bool IsIgnoredGearItem(uint32 itemEntry)
+bool IsIgnoredGearItem(uint32 itemEntry, ItemTemplate const* itemTemplate = nullptr)
 {
     for (uint32 ignoredItemEntry : IGNORED_GEAR_ITEM_ENTRIES)
         if (itemEntry == ignoredItemEntry)
             return true;
+
+    if (!itemTemplate)
+        return false;
+
+    if (itemTemplate->HasFlag(ITEM_FLAG_DEPRECATED))
+        return true;
+
+    std::string itemName = itemTemplate->Name1;
+    std::transform(itemName.begin(), itemName.end(), itemName.begin(), [](unsigned char character)
+    {
+        return static_cast<char>(std::tolower(character));
+    });
+    if (itemName.find("test") != std::string::npos)
+        return true;
 
     return false;
 }
@@ -34,7 +56,7 @@ ItemTemplate const* FindGearAlternative(Player* player, ItemTemplate const* orig
     ItemTemplate const* bestAlternative = nullptr;
     for (auto const& [itemId, candidate] : *itemTemplates)
     {
-        if (IsIgnoredGearItem(itemId) || candidate.HasFlag(ITEM_FLAG_DEPRECATED) || candidate.Class != original->Class || candidate.SubClass != original->SubClass ||
+        if (IsIgnoredGearItem(itemId, &candidate) || candidate.Class != original->Class || candidate.SubClass != original->SubClass ||
             candidate.InventoryType != original->InventoryType || LevelBoostInternal::HasProfessionSkillRequirement(&candidate) ||
             candidate.RequiredLevel > player->GetLevel() || candidate.ItemLevel > 22 ||
             candidate.Quality < 1 || candidate.Quality > 2 ||
@@ -69,7 +91,7 @@ ItemTemplate const* FindPaladinRetributionTwoHandWeapon(Player* player)
             candidate.SubClass == ITEM_SUBCLASS_WEAPON_POLEARM ||
             candidate.SubClass == ITEM_SUBCLASS_WEAPON_SWORD2;
 
-        if (IsIgnoredGearItem(itemId) || candidate.HasFlag(ITEM_FLAG_DEPRECATED) || candidate.Class != ITEM_CLASS_WEAPON || candidate.InventoryType != INVTYPE_2HWEAPON ||
+        if (IsIgnoredGearItem(itemId, &candidate) || candidate.Class != ITEM_CLASS_WEAPON || candidate.InventoryType != INVTYPE_2HWEAPON ||
             !isPaladinWeaponSubclass || LevelBoostInternal::HasProfessionSkillRequirement(&candidate) || candidate.ItemLevel > 22 ||
             candidate.Quality < 1 || candidate.Quality > 2 ||
             !LevelBoostInternal::IsItemUsableForBoost(player, &candidate, player->GetLevel()))
@@ -110,7 +132,7 @@ ItemTemplate const* FindOffhandItem(Player* player, uint32 mainHandEntry)
             candidate.SubClass == ITEM_SUBCLASS_ARMOR_SHIELD && candidate.InventoryType == INVTYPE_SHIELD;
         bool const isHoldable = player->getClass() != CLASS_ROGUE && candidate.InventoryType == INVTYPE_HOLDABLE;
 
-        if (IsIgnoredGearItem(itemId) || candidate.HasFlag(ITEM_FLAG_DEPRECATED) || itemId == mainHandEntry || (!isRogueOffhandWeapon && !isShield && !isHoldable) ||
+        if (IsIgnoredGearItem(itemId, &candidate) || itemId == mainHandEntry || (!isRogueOffhandWeapon && !isShield && !isHoldable) ||
             LevelBoostInternal::HasProfessionSkillRequirement(&candidate) || candidate.ItemLevel > 22 ||
             candidate.Quality < 1 || candidate.Quality > 2 ||
             !LevelBoostInternal::IsItemUsableForBoost(player, &candidate, player->GetLevel()))
@@ -341,8 +363,7 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
             continue;
 
         ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(gearTemplate.item_entry);
-        if (IsIgnoredGearItem(gearTemplate.item_entry) ||
-            (itemTemplate && itemTemplate->HasFlag(ITEM_FLAG_DEPRECATED)))
+        if (IsIgnoredGearItem(gearTemplate.item_entry, itemTemplate))
         {
             LOG_DEBUG("module", "Skipping ignored gear item {} for {} / {} / {} without replacement.",
                 gearTemplate.item_entry, playerClass, playerSpec, playerRace);

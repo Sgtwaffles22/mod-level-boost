@@ -157,7 +157,8 @@ FROM (
         -- Exclude AzerothCore-deprecated items (Flags bit 0x10) and known unavailable item entries.
         WHERE it.`RequiredLevel` <= 15
           AND (it.`Flags` & 16) = 0
-          AND it.`entry` NOT IN (2588, 3529, 4667, 4670)
+          AND it.`entry` NOT IN (905, 906, 907, 908, 909, 2588, 3529, 4667, 4670)
+          AND LOWER(it.`name`) NOT LIKE '%test%'
           AND it.`ItemLevel` <= 22
           AND it.`Quality` BETWEEN 1 AND 2
           AND it.`RequiredSkill` = 0
