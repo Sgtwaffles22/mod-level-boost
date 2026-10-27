@@ -229,7 +229,7 @@ void LevelBoost::HandleBoost(Player* player, Creature* creature, std::string con
         if (recheckedBoostRewards)
         {
             player->SaveToDB(false, false);
-            player->GetSession()->SendAreaTriggerMessage("This character already claimed the boost. Eligible class quest rewards and missing class spells were checked.");
+            player->GetSession()->SendAreaTriggerMessage("This character already claimed the boost. Configured class quest actions and missing class spells were checked.");
         }
         else
             player->GetSession()->SendAreaTriggerMessage("This character has already claimed a level boost.");
@@ -265,7 +265,8 @@ void LevelBoost::HandleBoost(Player* player, Creature* creature, std::string con
     LearnDualSpec(player);
     DestroyProjectiles(player);
     LearnSpellsForLevel(player);
-    AddClassItems(player);
+    if (giveClassItems)
+        AddClassItems(player);
     player->UpdateSkillsToMaxSkillsForLevel();
 
     if (oneTimeOnly)

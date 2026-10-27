@@ -28,6 +28,8 @@ Bags.Enable = 1
 Bags.Item = 4240
 Bags.Count = 4
 ClassQuests.Enable = 1
+ClassQuests.GrantItems = 1
+ClassItems.Enable = 1
 LearnSpells.Enable = 1
 LearnProficiencies.Enable = 1
 LearnTalents.Enable = 1
@@ -39,7 +41,9 @@ DestroyGear.Enable = 1
 - `LevelBoost.Level` is the target level. The module clamps it to the range 1 through the server's `MaxPlayerLevel`.
 - `LevelBoost.Gold` is a whole-gold amount: 1 gold is 10,000 copper, so the default `100` grants 1,000,000 copper. Set it to `0` to grant no gold. The core's money cap still applies.
 - `Bags.Item` is an item-template ID. The default, item 4240 (Woolen Bag), has 8 slots. `Bags.Count` is limited to the four bag slots. The module fills empty slots and does not mail bags that it cannot equip.
-- `ClassQuests.Enable` marks eligible, non-repeatable class quests through the target level as rewarded. It grants valid fixed rewards and the first usable choice item, grants only the missing quantity when the character partly owns an item, and avoids granting the same item entry twice during one boost. Learnable quest spells are granted when their conditions match. Quest XP and money are not granted; item rewards are mailed if the inventory cannot hold them.
+- `ClassQuests.Enable` controls whether eligible, non-repeatable class quests through the target level are marked rewarded. Quest completion also learns applicable quest reward spells; it does not grant quest XP or money.
+- `ClassQuests.GrantItems` independently controls whether valid fixed rewards and the first usable choice item from those quests are granted. It defaults to `1` and only takes effect when `ClassQuests.Enable = 1`. The module grants only the missing quantity when the character partly owns an item, avoids duplicate item entries during one boost, and mails rewards if the inventory cannot hold them.
+- `ClassItems.Enable` controls additional class-specific items granted after the boost (currently Shaman totems). It defaults to `1`.
 - `LearnSpells.Enable` teaches eligible class spells from `mod_boost_class_spells`. `LearnProficiencies.Enable` teaches eligible class proficiencies from `mod_boost_class_proficiencies`. The corresponding world SQL files must be applied for these features to have data.
 - `LearnTalents.Enable` applies the selected specialization's talent template. `LearnGlyphs.Enable` applies its glyph template when the character has unlocked the slot.
 - `DualSpec.Enable` defaults to `0` (disabled). `DestroyGear.Enable` defaults to `1`; when enabled, the boost removes the character's equipped gear before applying the new gear. If disabled, existing equipped items are kept, so occupied slots may keep their current item.

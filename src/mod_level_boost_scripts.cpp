@@ -284,8 +284,14 @@ public:
         sLevelBoost->learnGlyphs = sConfigMgr->GetOption<bool>("LearnGlyphs.Enable", true);
         sLevelBoost->destroyGear = sConfigMgr->GetOption<bool>("DestroyGear.Enable", true);
         sLevelBoost->completeClassQuests = sConfigMgr->GetOption<bool>("ClassQuests.Enable", true);
+        sLevelBoost->grantClassQuestItems = sConfigMgr->GetOption<bool>("ClassQuests.GrantItems", true);
+        sLevelBoost->giveClassItems = sConfigMgr->GetOption<bool>("ClassItems.Enable", true);
 
         LOG_INFO("module", ">> Class spell learning is {}.", sLevelBoost->learnSpells ? "enabled" : "disabled");
+        LOG_INFO("module", ">> Class quest completion is {}; quest item rewards are {}; class item grants are {}.",
+            sLevelBoost->completeClassQuests ? "enabled" : "disabled",
+            sLevelBoost->grantClassQuestItems ? "enabled" : "disabled",
+            sLevelBoost->giveClassItems ? "enabled" : "disabled");
         LOG_INFO("module", ">> Loaded Level Boost Config in {} ms.", GetMSTimeDiffToNow(oldTime));
     }
 };

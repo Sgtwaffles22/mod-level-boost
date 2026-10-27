@@ -50,49 +50,50 @@ ClassQuestPlan LevelBoost::BuildClassQuestPlan(Player* player, uint32 targetLeve
 
         PlannedClassQuest plannedQuest;
         plannedQuest.quest = quest;
-        bool invalidReward = false;
 
-        for (uint8 rewardIndex = 0; rewardIndex < QUEST_REWARDS_COUNT; ++rewardIndex)
+        if (grantClassQuestItems)
         {
-            uint32 const itemId = quest->RewardItemId[rewardIndex];
-            uint32 const count = quest->RewardItemIdCount[rewardIndex];
-            if (!itemId || !count)
-                continue;
-
-            if (!sObjectMgr->GetItemTemplate(itemId))
+            bool invalidReward = false;
+            for (uint8 rewardIndex = 0; rewardIndex < QUEST_REWARDS_COUNT; ++rewardIndex)
             {
-                invalidReward = true;
-                continue;
+                uint32 const itemId = quest->RewardItemId[rewardIndex];
+                uint32 const count = quest->RewardItemIdCount[rewardIndex];
+                if (!itemId || !count)
+                    continue;
+
+                if (!sObjectMgr->GetItemTemplate(itemId))
+                {
+                    invalidReward = true;
+                    continue;
+                }
+
+                plannedQuest.rewards.push_back({ itemId, count });
             }
 
-            plannedQuest.rewards.push_back({ itemId, count });
-        }
+            if (invalidReward)
+                plan.invalidRewardQuests.push_back(quest);
 
-        if (invalidReward)
-            plan.invalidRewardQuests.push_back(quest);
+            bool hasChoiceReward = false;
+            bool selectedChoiceReward = false;
+            for (uint8 rewardIndex = 0; rewardIndex < QUEST_REWARD_CHOICES_COUNT; ++rewardIndex)
+            {
+                uint32 const itemId = quest->RewardChoiceItemId[rewardIndex];
+                uint32 const count = quest->RewardChoiceItemCount[rewardIndex];
+                if (!itemId)
+                    continue;
 
-        bool hasChoiceReward = false;
-        bool selectedChoiceReward = false;
-        for (uint8 rewardIndex = 0; rewardIndex < QUEST_REWARD_CHOICES_COUNT; ++rewardIndex)
-        {
-            uint32 const itemId = quest->RewardChoiceItemId[rewardIndex];
-            uint32 const count = quest->RewardChoiceItemCount[rewardIndex];
-            if (!itemId)
-                continue;
+                hasChoiceReward = true;
+                ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
+                if (!count || !LevelBoostInternal::IsItemUsableForBoost(player, itemTemplate, targetLevel))
+                    continue;
 
-            hasChoiceReward = true;
-            ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
-            if (!count || !LevelBoostInternal::IsItemUsableForBoost(player, itemTemplate, targetLevel))
-                continue;
+                plannedQuest.rewards.push_back({ itemId, count });
+                selectedChoiceReward = true;
+                break;
+            }
 
-            plannedQuest.rewards.push_back({ itemId, count });
-            selectedChoiceReward = true;
-            break;
-        }
-
-        if (hasChoiceReward && !selectedChoiceReward)
-        {
-            plan.unavailableChoiceRewardQuests.push_back(quest);
+            if (hasChoiceReward && !selectedChoiceReward)
+                plan.unavailableChoiceRewardQuests.push_back(quest);
         }
 
         plan.quests.push_back(plannedQuest);

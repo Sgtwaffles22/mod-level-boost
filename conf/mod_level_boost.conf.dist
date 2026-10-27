@@ -58,13 +58,32 @@ Bags.Count = 4
 #
 #    ClassQuests.Enable
 #        Description: Marks all eligible non-repeatable class quests through the target level as rewarded, regardless of reward type.
-#                     Grants valid item rewards and learnable quest spells. A quest is still marked rewarded if its item reward
-#                     is invalid or unavailable. Quest XP and money are not granted.
+#                     Learnable quest spells are still applied. Quest XP and money are not granted.
+#                     Control item rewards separately with ClassQuests.GrantItems.
 #        Default:     1 - Enabled
 #                     0 - Disabled
 #
 
 ClassQuests.Enable = 1
+
+#
+#    ClassQuests.GrantItems
+#        Description: Grants valid item rewards from eligible class quests. Requires ClassQuests.Enable = 1.
+#                     Quest completion still grants learnable quest spells when this is disabled.
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+
+ClassQuests.GrantItems = 1
+
+#
+#    ClassItems.Enable
+#        Description: Grants additional class-specific utility items during a boost (currently Shaman totems).
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+
+ClassItems.Enable = 1
 
 #
 #    LearnSpells.Enable

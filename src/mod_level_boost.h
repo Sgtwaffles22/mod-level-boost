@@ -117,7 +117,8 @@ public:
     TalentTemplateContainer talentTemplateList;
     GlyphTemplateContainer glyphTemplateList;
 
-    bool levelBoost, oneTimeOnly, dualSpec, learnSpells, LearnProficiencies, learnTalents, learnGlyphs, destroyGear, completeClassQuests, giveBags;
+    bool levelBoost, oneTimeOnly, dualSpec, learnSpells, LearnProficiencies, learnTalents, learnGlyphs, destroyGear;
+    bool completeClassQuests, grantClassQuestItems, giveClassItems, giveBags;
     uint32 boostLevel = 15;
     uint32 startingGold = 100;
     uint32 starterBagItem = 4240;
