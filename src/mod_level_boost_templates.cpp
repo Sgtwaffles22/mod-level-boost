@@ -9,7 +9,7 @@
 
 namespace
 {
-std::array<uint32, 9> constexpr IGNORED_GEAR_ITEM_ENTRIES = {
+std::array<uint32, 11> constexpr IGNORED_GEAR_ITEM_ENTRIES = {
     905,  // Explicitly ignored gear item
     906,  // Tan Leather Shoulderpads (Test)
     907,  // Black Mail Shoulderpads of Might (Test)
@@ -18,7 +18,9 @@ std::array<uint32, 9> constexpr IGNORED_GEAR_ITEM_ENTRIES = {
     2588, // Deprecated Red Leather Mask
     3529, // Black Night Elf Helm
     4667, // Deprecated Battle Chain Pauldrons
-    4670  // Deprecated Ancestral Mantle
+    4670, // Deprecated Ancestral Mantle
+    4728, // Twain's Shoulder
+    40225 // CRobinson Leather Helm
 };
 
 bool IsIgnoredGearItem(uint32 itemEntry, ItemTemplate const* itemTemplate = nullptr)
@@ -30,7 +32,7 @@ bool IsIgnoredGearItem(uint32 itemEntry, ItemTemplate const* itemTemplate = null
     if (!itemTemplate)
         return false;
 
-    if (itemTemplate->HasFlag(ITEM_FLAG_DEPRECATED))
+    if (itemTemplate->HasFlag(ITEM_FLAG_DEPRECATED) || itemTemplate->ItemLevel == 0)
         return true;
 
     std::string itemName = itemTemplate->Name1;
@@ -38,7 +40,7 @@ bool IsIgnoredGearItem(uint32 itemEntry, ItemTemplate const* itemTemplate = null
     {
         return static_cast<char>(std::tolower(character));
     });
-    if (itemName.find("test") != std::string::npos)
+    if (itemName.find("test") != std::string::npos || itemName.find("crobinson ") == 0)
         return true;
 
     return false;
@@ -77,7 +79,7 @@ ItemTemplate const* FindGearAlternative(Player* player, ItemTemplate const* orig
     return bestAlternative;
 }
 
-ItemTemplate const* FindPaladinRetributionTwoHandWeapon(Player* player)
+ItemTemplate const* FindTwoHandWeapon(Player* player)
 {
     auto const* itemTemplates = sObjectMgr->GetItemTemplateStore();
     if (!itemTemplates)
@@ -86,15 +88,19 @@ ItemTemplate const* FindPaladinRetributionTwoHandWeapon(Player* player)
     ItemTemplate const* bestWeapon = nullptr;
     for (auto const& [itemId, candidate] : *itemTemplates)
     {
-        bool const isPaladinWeaponSubclass = candidate.SubClass == ITEM_SUBCLASS_WEAPON_AXE2 ||
+        bool const isTwoHandWeaponSubclass = candidate.SubClass == ITEM_SUBCLASS_WEAPON_AXE2 ||
             candidate.SubClass == ITEM_SUBCLASS_WEAPON_MACE2 ||
             candidate.SubClass == ITEM_SUBCLASS_WEAPON_POLEARM ||
             candidate.SubClass == ITEM_SUBCLASS_WEAPON_SWORD2;
 
         if (IsIgnoredGearItem(itemId, &candidate) || candidate.Class != ITEM_CLASS_WEAPON || candidate.InventoryType != INVTYPE_2HWEAPON ||
-            !isPaladinWeaponSubclass || LevelBoostInternal::HasProfessionSkillRequirement(&candidate) || candidate.ItemLevel > 22 ||
+            !isTwoHandWeaponSubclass || LevelBoostInternal::HasProfessionSkillRequirement(&candidate) || candidate.ItemLevel > 22 ||
             candidate.Quality < 1 || candidate.Quality > 2 ||
             !LevelBoostInternal::IsItemUsableForBoost(player, &candidate, player->GetLevel()))
+            continue;
+
+        uint16 destination = 0;
+        if (player->CanEquipNewItem(EQUIPMENT_SLOT_MAINHAND, destination, itemId, false) != EQUIP_ERR_OK)
             continue;
 
         if (!bestWeapon || candidate.Quality > bestWeapon->Quality ||
@@ -317,16 +323,14 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
 {
     std::string const playerClass = GetClassString(player);
     std::string const playerRace = GetRaceString(player);
-    bool const isPaladinRetribution = playerClass == "Paladin" && playerSpec == "Retribution";
+    bool const isTwoHandSpec = (playerClass == "Paladin" && playerSpec == "Retribution") ||
+        (playerClass == "Warrior" && (playerSpec == "Arms" || playerSpec == "Fury"));
     bool const isRogue = playerClass == "Rogue";
-    ItemTemplate const* retributionWeapon = isPaladinRetribution ? FindPaladinRetributionTwoHandWeapon(player) : nullptr;
-    bool retributionWeaponEquipped = false;
+    ItemTemplate const* twoHandWeapon = isTwoHandSpec ? FindTwoHandWeapon(player) : nullptr;
+    bool twoHandWeaponEquipped = false;
     uint32 rogueMainHandEntry = 0;
     bool offhandEquipped = false;
     std::array<bool, EQUIPMENT_SLOT_END> processedSlots{};
-
-    if (isPaladinRetribution && !retributionWeapon)
-        LOG_WARN("module", "No eligible level {} two-handed weapon was found for Paladin Retribution {}.", player->GetLevel(), player->GetName());
 
     // Process the off-hand after the main hand so fallback selection can avoid duplicate weapons.
     for (uint8 pass = 0; pass < 2; ++pass)
@@ -359,7 +363,7 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
             gearTemplate.equipment_slot == EQUIPMENT_SLOT_TRINKET2)
             continue;
 
-        if (isPaladinRetribution && gearTemplate.equipment_slot == EQUIPMENT_SLOT_OFFHAND && retributionWeapon)
+        if (isTwoHandSpec && gearTemplate.equipment_slot == EQUIPMENT_SLOT_OFFHAND)
             continue;
 
         ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(gearTemplate.item_entry);
@@ -371,11 +375,22 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
         }
 
         uint32 itemEntry = gearTemplate.item_entry;
-        if (isPaladinRetribution && gearTemplate.equipment_slot == EQUIPMENT_SLOT_MAINHAND && retributionWeapon)
+        if (isTwoHandSpec && gearTemplate.equipment_slot == EQUIPMENT_SLOT_MAINHAND)
         {
-            itemEntry = retributionWeapon->ItemId;
-            itemTemplate = retributionWeapon;
-            LOG_INFO("module", "Using two-handed weapon {} for Paladin Retribution {}.", itemEntry, player->GetName());
+            uint16 templateDestination = 0;
+            bool const usableTwoHandTemplate = itemTemplate && itemTemplate->Class == ITEM_CLASS_WEAPON &&
+                itemTemplate->InventoryType == INVTYPE_2HWEAPON &&
+                !LevelBoostInternal::HasProfessionSkillRequirement(itemTemplate) &&
+                LevelBoostInternal::IsItemUsableForBoost(player, itemTemplate, player->GetLevel()) &&
+                player->CanEquipNewItem(EQUIPMENT_SLOT_MAINHAND, templateDestination, itemEntry, false) == EQUIP_ERR_OK;
+            if (!usableTwoHandTemplate)
+            {
+                if (!twoHandWeapon)
+                    continue;
+                itemEntry = twoHandWeapon->ItemId;
+                itemTemplate = twoHandWeapon;
+                LOG_INFO("module", "Using two-handed weapon {} for {} {} {}.", itemEntry, playerClass, playerSpec, player->GetName());
+            }
         }
         else if (!itemTemplate)
             continue;
@@ -435,20 +450,23 @@ void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec
         if (isOffhandSlot)
             offhandEquipped = true;
 
-        if (isPaladinRetribution && gearTemplate.equipment_slot == EQUIPMENT_SLOT_MAINHAND && retributionWeapon)
-        {
-            Item* equippedWeapon = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
-            retributionWeaponEquipped = equippedWeapon && equippedWeapon->GetEntry() == retributionWeapon->ItemId;
-        }
+        if (isTwoHandSpec && gearTemplate.equipment_slot == EQUIPMENT_SLOT_MAINHAND)
+            twoHandWeaponEquipped = true;
     }
 
-    if (isPaladinRetribution && retributionWeapon && !retributionWeaponEquipped)
+    if (isTwoHandSpec && twoHandWeapon && !twoHandWeaponEquipped)
     {
-        player->EquipNewItem(EQUIPMENT_SLOT_MAINHAND, retributionWeapon->ItemId, true);
-        LOG_INFO("module", "Equipped fallback two-handed weapon {} for Paladin Retribution {}.", retributionWeapon->ItemId, player->GetName());
+        uint16 destination = 0;
+        if (player->CanEquipNewItem(EQUIPMENT_SLOT_MAINHAND, destination, twoHandWeapon->ItemId, false) == EQUIP_ERR_OK &&
+            player->EquipNewItem(destination, twoHandWeapon->ItemId, true))
+            LOG_INFO("module", "Equipped fallback two-handed weapon {} for {} {} {}.", twoHandWeapon->ItemId, playerClass, playerSpec, player->GetName());
+        else
+            LOG_WARN("module", "Could not equip fallback two-handed weapon {} for {} {} {}.", twoHandWeapon->ItemId, playerClass, playerSpec, player->GetName());
     }
+    else if (isTwoHandSpec && !twoHandWeaponEquipped)
+        LOG_WARN("module", "No eligible level {} two-handed weapon was found for {} {} {}.", player->GetLevel(), playerClass, playerSpec, player->GetName());
 
-    if (!offhandEquipped && !(isPaladinRetribution && retributionWeapon))
+    if (!offhandEquipped && !isTwoHandSpec)
     {
         if (ItemTemplate const* offhandItem = FindOffhandItem(player, rogueMainHandEntry))
         {

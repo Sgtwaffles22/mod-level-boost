@@ -142,9 +142,11 @@ FROM (
                 PARTITION BY cr.`player_class`, sp.`player_spec`, cr.`player_race`, st.`equipment_slot`
                 ORDER BY
                     CASE
-                        WHEN cr.`player_class` = 'Paladin' AND sp.`player_spec` = 'Retribution'
+                        WHEN ((cr.`player_class` = 'Paladin' AND sp.`player_spec` = 'Retribution') OR
+                              (cr.`player_class` = 'Warrior' AND sp.`player_spec` IN ('Arms', 'Fury')))
                              AND st.`equipment_slot` = 15 AND it.`InventoryType` = 17 THEN 0
-                        WHEN cr.`player_class` = 'Paladin' AND sp.`player_spec` = 'Retribution'
+                        WHEN ((cr.`player_class` = 'Paladin' AND sp.`player_spec` = 'Retribution') OR
+                              (cr.`player_class` = 'Warrior' AND sp.`player_spec` IN ('Arms', 'Fury')))
                              AND st.`equipment_slot` = 15 THEN 1
                         ELSE 0
                     END,
@@ -157,15 +159,21 @@ FROM (
         -- Exclude AzerothCore-deprecated items (Flags bit 0x10) and known unavailable item entries.
         WHERE it.`RequiredLevel` <= 15
           AND (it.`Flags` & 16) = 0
-          AND it.`entry` NOT IN (905, 906, 907, 908, 909, 2588, 3529, 4667, 4670)
+          AND it.`entry` NOT IN (905, 906, 907, 908, 909, 2588, 3529, 4667, 4670, 4728, 40225)
           AND LOWER(it.`name`) NOT LIKE '%test%'
-          AND it.`ItemLevel` <= 22
+          AND LOWER(it.`name`) NOT LIKE 'crobinson %'
+          AND it.`ItemLevel` BETWEEN 1 AND 22
           AND it.`Quality` BETWEEN 1 AND 2
           AND it.`RequiredSkill` = 0
           AND it.`RequiredSkillRank` = 0
           AND it.`InventoryType` = st.`inventory_type`
           AND (st.`equipment_slot` <> 16 OR st.`item_kind` <> 'weapon' OR cr.`player_class` = 'Rogue')
-          AND (it.`InventoryType` <> 17 OR (cr.`player_class` = 'Paladin' AND sp.`player_spec` = 'Retribution'))
+          AND (it.`InventoryType` <> 17 OR
+               (((cr.`player_class` = 'Paladin' AND sp.`player_spec` = 'Retribution')
+                 OR (cr.`player_class` = 'Warrior' AND sp.`player_spec` IN ('Arms', 'Fury')))
+                AND it.`subclass` IN (1, 5, 6, 8)))
+          AND (st.`equipment_slot` <> 16 OR NOT ((cr.`player_class` = 'Paladin' AND sp.`player_spec` = 'Retribution')
+               OR (cr.`player_class` = 'Warrior' AND sp.`player_spec` IN ('Arms', 'Fury'))))
           AND (it.`AllowableClass` = -1 OR (it.`AllowableClass` & (1 << (cr.`class_id` - 1))) <> 0)
           AND (it.`AllowableRace` = -1 OR (it.`AllowableRace` & cr.`race_mask`) <> 0)
           AND (

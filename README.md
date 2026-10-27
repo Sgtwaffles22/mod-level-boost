@@ -54,7 +54,7 @@ With `LevelBoost.OneTimeOnly = 1`, each character can claim the boost once. If c
 
 The SQL seed provides gear, talent, and glyph templates for all 27 class/spec combinations; gear templates are also race-specific. The defaults are designed for level 15:
 
-- The gear seed selects items usable by the character's class and race, with required level 15 or lower, item level 22 or lower, common or uncommon quality, and no profession-skill requirement. Trinkets are excluded. Eligible off-hand items are applied when available; Rogues receive a distinct one-handed weapon. For Retribution Paladins, an eligible two-handed weapon takes priority over off-hand gear. If a custom template contains profession-gated gear, the boost looks for a compatible replacement and skips the item if none is found.
+- The gear seed selects items usable by the character's class and race, with required level 15 or lower, item level 1 through 22, common or uncommon quality, and no profession-skill requirement. Trinkets, zero-item-level gear, CRobinson items, and known unavailable items are excluded. Eligible off-hand items are applied when available; Rogues receive a distinct one-handed weapon. Arms and Fury Warriors and Retribution Paladins receive an eligible two-handed weapon when one is available. If a custom template contains profession-gated gear, the boost looks for a compatible replacement and skips the item if none is found.
 - Talent templates spend six points in the selected tree's first tier. At higher boost levels, unspent points remain available.
 - The seed assigns one class-appropriate minor glyph to the level-15 glyph slot for each specialization.
 
