@@ -86,6 +86,16 @@ ClassQuests.GrantItems = 1
 ClassItems.Enable = 1
 
 #
+#    Gear.Random.Enable
+#        Description: Uses the original random gear templates instead of the ranked level-15 green templates.
+#                     The original template seed ranks eligible items by quality and item level. Restart or reload the server config after changing it.
+#        Default:     0 - Ranked green gear
+#                     1 - Random gear templates
+#
+
+Gear.Random.Enable = 0
+
+#
 #    LearnSpells.Enable
 #        Description: Learns class spells from the mod_boost_class_spells table that match the boosted character's class and level.
 #                     Apply class_spells_table.sql to populate this table.

@@ -11,6 +11,7 @@ This repository is a fork of [fischerlol/mod-level-15-boost](https://github.com/
 Place this module in your AzerothCore checkout's `modules` directory and build AzerothCore with the module enabled. When the server starts with AzerothCore's database updater enabled, it automatically discovers and applies this module's SQL files. No manual SQL import is needed. The gear seed reads from the core's `item_template` table, so the core world database must already be installed.
 
 - SQL in `data/sql/db-world/` creates and seeds the spell, proficiency, gear, talent, and glyph templates; configures the supported starting NPCs; and registers the `.levelboost reload` command.
+- The world updates also create `mod_boost_green_gear`, the default level-15 green gear templates. The original templates remain available as Random Gear.
 - SQL in `data/sql/db-characters/` creates the claim table used when `LevelBoost.OneTimeOnly = 1`.
 
 The database updater tracks applied SQL. Several template seed files drop and recreate their tables, so editing an already-applied seed file can cause custom or extracted template data to be replaced when the updater reapplies it.
@@ -30,6 +31,7 @@ Bags.Count = 4
 ClassQuests.Enable = 1
 ClassQuests.GrantItems = 1
 ClassItems.Enable = 1
+Gear.Random.Enable = 0
 LearnSpells.Enable = 1
 LearnProficiencies.Enable = 1
 LearnTalents.Enable = 1
@@ -44,6 +46,7 @@ DestroyGear.Enable = 1
 - `ClassQuests.Enable` controls whether eligible, non-repeatable class quests through the target level are marked rewarded. Quest completion also learns applicable quest reward spells; it does not grant quest XP or money.
 - `ClassQuests.GrantItems` independently controls whether valid fixed rewards and the first usable choice item from those quests are granted. It defaults to `1` and only takes effect when `ClassQuests.Enable = 1`. The module grants only the missing quantity when the character partly owns an item, avoids duplicate item entries during one boost, and mails rewards if the inventory cannot hold them.
 - `ClassItems.Enable` controls additional class-specific items granted after the boost (currently Shaman totems). It defaults to `1`.
+- `Gear.Random.Enable` defaults to `0` and uses the ranked green gear templates. Set it to `1`, then restart or reload the server config to use the original Random Gear templates in `mod_boost_gear`, including existing custom templates. Despite the name, the original seed ranks eligible items by quality and item level; it does not randomly roll each slot.
 - `LearnSpells.Enable` teaches eligible class spells from `mod_boost_class_spells`. `LearnProficiencies.Enable` teaches eligible class proficiencies from `mod_boost_class_proficiencies`. The corresponding world SQL files must be applied for these features to have data.
 - `LearnTalents.Enable` applies the selected specialization's talent template. `LearnGlyphs.Enable` applies its glyph template when the character has unlocked the slot.
 - `DualSpec.Enable` defaults to `0` (disabled). `DestroyGear.Enable` defaults to `1`; when enabled, the boost removes the character's equipped gear before applying the new gear. If disabled, existing equipped items are kept, so occupied slots may keep their current item.
@@ -54,11 +57,11 @@ With `LevelBoost.OneTimeOnly = 1`, each character can claim the boost once. If c
 
 The SQL seed provides gear, talent, and glyph templates for all 27 class/spec combinations; gear templates are also race-specific. The defaults are designed for level 15:
 
-- The gear seed selects items usable by the character's class and race, with required level 15 or lower, item level 1 through 22, common or uncommon quality, and no profession-skill requirement. Trinkets, zero-item-level gear, CRobinson items, and known unavailable items are excluded. Eligible off-hand items are applied when available; Rogues receive a distinct one-handed weapon. Arms and Fury Warriors and Retribution Paladins receive an eligible two-handed weapon when one is available. If a custom template contains profession-gated gear, the boost looks for a compatible replacement and skips the item if none is found.
+- The default green templates rank obtainable green items by each specialization's relevant stats and weapon damage. They include the chosen random-stat variant, use equipment available at level 15, and exclude profession-gated gear, trinkets, and known unavailable items. An empty slot stays empty if the template has no suitable item or the server cannot equip it. Arms and Fury Warriors and Retribution Paladins use two-handed weapons; Protection Warriors use a shield, and Rogues use distinct one-handed weapons. See [green gear selection](docs/green-gear.md) for the priorities and source limitations.
 - Talent templates spend six points in the selected tree's first tier. At higher boost levels, unspent points remain available.
 - The seed assigns one class-appropriate minor glyph to the level-15 glyph slot for each specialization.
 
-Changing `LevelBoost.Level` does not regenerate the starter templates. To customize them, set up a character at the level you want to support, equip the desired gear, choose its talents and glyphs, then run `.levelboost extract <spec>` as an in-game administrator. For example: `.levelboost extract Retribution`. Gear is saved for that class, specialization, and race; the talent and glyph templates are saved for that class and specialization.
+Changing `LevelBoost.Level` does not regenerate the starter templates. To customize them, set up a character at the level you want to support, equip the desired gear, choose its talents and glyphs, then run `.levelboost extract <spec>` as an in-game administrator, followed by `.levelboost reload`. For example: `.levelboost extract Retribution`. Gear is saved for that class, specialization, and race in the currently selected gear table; talent and glyph templates are saved for that class and specialization. In green mode, extraction saves green equipment that passes the ignore list, including its random-stat variant. Other equip checks still apply during the boost.
 
 ## Using the boost
 

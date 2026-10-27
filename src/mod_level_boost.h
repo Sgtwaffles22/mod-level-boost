@@ -79,6 +79,7 @@ struct GearTemplate
     std::string player_race;
     uint8 equipment_slot;
     uint32 item_entry;
+    int32 random_property = 0;
 };
 
 struct TalentTemplate
@@ -118,7 +119,7 @@ public:
     GlyphTemplateContainer glyphTemplateList;
 
     bool levelBoost, oneTimeOnly, dualSpec, learnSpells, LearnProficiencies, learnTalents, learnGlyphs, destroyGear;
-    bool completeClassQuests, grantClassQuestItems, giveClassItems, giveBags;
+    bool completeClassQuests, grantClassQuestItems, giveClassItems, giveBags, useGreenGear;
     uint32 boostLevel = 15;
     uint32 startingGold = 100;
     uint32 starterBagItem = 4240;
@@ -147,6 +148,7 @@ public:
     bool TemplateExists(Player* player, std::string const& playerSpec);
     bool ApplyFullTemplate(Player* player, std::string const& playerSpec);
     void ApplyGearTemplate(Player* player, std::string const& playerSpec);
+    void ApplyGreenGearTemplate(Player* player, std::string const& playerSpec);
     void ApplyTalentTemplate(Player* player, std::string const& playerSpec);
     void ApplyGlyphTemplate(Player* player, std::string const& playerSpec);
     void ExtractTemplates(Player* player, std::string player_spec);

@@ -218,7 +218,14 @@ void LevelBoost::LoadGlyphContainer()
 void LevelBoost::LoadGearContainer()
 {
     gearTemplateList.clear();
-    QueryResult result = WorldDatabase.Query("SELECT `player_class`, `player_spec`, `player_race`, `equipment_slot`, `item_entry` FROM `mod_boost_gear`");
+    QueryResult result = useGreenGear
+        ? WorldDatabase.Query("SELECT g.`player_class`, g.`player_spec`, g.`player_race`, g.`equipment_slot`, g.`item_entry`, g.`random_property` "
+            "FROM `mod_boost_green_gear` AS g LEFT JOIN `item_template` AS it ON it.`entry` = g.`item_entry` "
+            "LEFT JOIN `item_enchantment_template` AS ench ON ench.`entry` = "
+            "CASE WHEN g.`random_property` > 0 THEN it.`RandomProperty` ELSE it.`RandomSuffix` END "
+            "AND ench.`ench` = ABS(g.`random_property`) AND ench.`chance` > 0 "
+            "WHERE g.`random_property` = 0 OR ench.`ench` IS NOT NULL")
+        : WorldDatabase.Query("SELECT `player_class`, `player_spec`, `player_race`, `equipment_slot`, `item_entry` FROM `mod_boost_gear`");
 
     if (!result)
     {
@@ -237,6 +244,7 @@ void LevelBoost::LoadGearContainer()
         gear.player_race = fields[2].Get<std::string>();
         gear.equipment_slot = fields[3].Get<uint8>();
         gear.item_entry = fields[4].Get<uint32>();
+        gear.random_property = useGreenGear ? fields[5].Get<int32>() : 0;
         gearTemplateList.push_back(gear);
 
         ++count;
@@ -319,8 +327,97 @@ bool LevelBoost::TemplateExists(Player* player, std::string const& playerSpec)
 }
 
 
+void LevelBoost::ApplyGreenGearTemplate(Player* player, std::string const& playerSpec)
+{
+    std::string const playerClass = GetClassString(player);
+    std::string const playerRace = GetRaceString(player);
+    bool const isTwoHandSpec = (playerClass == "Paladin" && playerSpec == "Retribution") ||
+        (playerClass == "Warrior" && (playerSpec == "Arms" || playerSpec == "Fury"));
+    std::array<bool, EQUIPMENT_SLOT_END> processedSlots{};
+
+    // Equip main-hand items before off-hand items so the core can validate the pair.
+    for (uint8 pass = 0; pass < 2; ++pass)
+    {
+        for (GearTemplate const& gear : gearTemplateList)
+        {
+            if (gear.player_class != playerClass || gear.player_spec != playerSpec || gear.player_race != playerRace)
+                continue;
+            if (gear.equipment_slot >= EQUIPMENT_SLOT_END)
+            {
+                LOG_WARN("module", "Ignoring invalid green gear slot {} for {} / {} / {}.", gear.equipment_slot, playerClass, playerSpec, playerRace);
+                continue;
+            }
+
+            bool const isOffhand = gear.equipment_slot == EQUIPMENT_SLOT_OFFHAND;
+            if (isOffhand != (pass == 1) || processedSlots[gear.equipment_slot] ||
+                gear.equipment_slot == EQUIPMENT_SLOT_TRINKET1 || gear.equipment_slot == EQUIPMENT_SLOT_TRINKET2 ||
+                (isTwoHandSpec && isOffhand))
+                continue;
+
+            ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(gear.item_entry);
+            if (!itemTemplate || IsIgnoredGearItem(gear.item_entry, itemTemplate) ||
+                itemTemplate->Quality != ITEM_QUALITY_UNCOMMON || LevelBoostInternal::HasProfessionSkillRequirement(itemTemplate) ||
+                !LevelBoostInternal::IsItemUsableForBoost(player, itemTemplate, player->GetLevel()))
+                continue;
+
+            if (isTwoHandSpec && gear.equipment_slot == EQUIPMENT_SLOT_MAINHAND &&
+                (itemTemplate->Class != ITEM_CLASS_WEAPON || itemTemplate->InventoryType != INVTYPE_2HWEAPON))
+                continue;
+
+            if (playerClass == "Rogue" && isOffhand)
+            {
+                Item* mainHand = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+                if (!IsRogueOffhandWeapon(itemTemplate) || (mainHand && mainHand->GetEntry() == gear.item_entry))
+                    continue;
+            }
+
+            bool const validProperty = gear.random_property > 0 && itemTemplate->RandomProperty &&
+                sItemRandomPropertiesStore.LookupEntry(static_cast<uint32>(gear.random_property));
+            bool const validSuffix = gear.random_property < 0 && itemTemplate->RandomSuffix &&
+                sItemRandomSuffixStore.LookupEntry(static_cast<uint32>(-static_cast<int64>(gear.random_property)));
+            if ((gear.random_property && !validProperty && !validSuffix) ||
+                (!gear.random_property && (itemTemplate->RandomProperty || itemTemplate->RandomSuffix)))
+            {
+                LOG_WARN("module", "Skipping green gear item {} for {} because its configured random property is missing or invalid.",
+                    gear.item_entry, player->GetName());
+                continue;
+            }
+
+            uint16 destination = 0;
+            InventoryResult const equipResult = player->CanEquipNewItem(gear.equipment_slot, destination, gear.item_entry, false);
+            if (equipResult != EQUIP_ERR_OK)
+            {
+                LOG_WARN("module", "Skipping green gear item {} for {} in slot {} because it cannot be equipped (result {}).",
+                    gear.item_entry, player->GetName(), gear.equipment_slot, static_cast<uint32>(equipResult));
+                continue;
+            }
+
+            Item* equippedItem = player->EquipNewItem(destination, gear.item_entry, true);
+            if (!equippedItem)
+                continue;
+
+            if (gear.random_property && equippedItem->GetItemRandomPropertyId() != gear.random_property)
+            {
+                // EquipNewItem initially rolls a random property. Replace its applied bonuses
+                // with the selected property before applying the new bonuses.
+                player->ApplyEnchantment(equippedItem, false);
+                equippedItem->SetItemRandomProperties(gear.random_property);
+                player->ApplyEnchantment(equippedItem, true);
+            }
+
+            processedSlots[gear.equipment_slot] = true;
+        }
+    }
+}
+
 void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec)
 {
+    if (useGreenGear)
+    {
+        ApplyGreenGearTemplate(player, playerSpec);
+        return;
+    }
+
     std::string const playerClass = GetClassString(player);
     std::string const playerRace = GetRaceString(player);
     bool const isTwoHandSpec = (playerClass == "Paladin" && playerSpec == "Retribution") ||
@@ -573,6 +670,28 @@ void LevelBoost::ApplyTalentTemplate(Player* player, std::string const& playerSp
 
 void LevelBoost::ExtractGearTemplate(Player* player, std::string player_spec)
 {
+    if (useGreenGear)
+    {
+        WorldDatabase.DirectExecute("INSERT IGNORE INTO mod_boost_green_overrides (player_class, player_spec, player_race) VALUES ('{}', '{}', '{}')",
+            GetClassString(player), player_spec, GetRaceString(player));
+        WorldDatabase.DirectExecute("DELETE FROM mod_boost_green_gear WHERE player_class = '{}' AND player_spec = '{}' AND player_race = '{}'",
+            GetClassString(player), player_spec, GetRaceString(player));
+
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        {
+            if (slot == EQUIPMENT_SLOT_BODY || slot == EQUIPMENT_SLOT_TRINKET1 || slot == EQUIPMENT_SLOT_TRINKET2)
+                continue;
+            Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (!item || !item->GetTemplate() || item->GetTemplate()->Quality != ITEM_QUALITY_UNCOMMON ||
+                IsIgnoredGearItem(item->GetEntry(), item->GetTemplate()))
+                continue;
+
+            WorldDatabase.DirectExecute("INSERT INTO mod_boost_green_gear (player_class, player_spec, player_race, equipment_slot, item_entry, random_property) VALUES ('{}', '{}', '{}', {}, {}, {})",
+                GetClassString(player), player_spec, GetRaceString(player), slot, item->GetEntry(), item->GetItemRandomPropertyId());
+        }
+        return;
+    }
+
     WorldDatabase.Query("DELETE FROM mod_boost_gear WHERE player_class = '{}' AND player_spec = '{}' AND player_race = '{}'", GetClassString(player), player_spec, GetRaceString(player));
 
     for (uint8 i = EQUIPMENT_SLOT_START; i < EQUIPMENT_SLOT_END; ++i)
