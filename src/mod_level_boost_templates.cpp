@@ -218,9 +218,9 @@ void LevelBoost::LoadGlyphContainer()
 void LevelBoost::LoadGearContainer()
 {
     gearTemplateList.clear();
-    QueryResult result = useGreenGear
+    QueryResult result = useBisGear
         ? WorldDatabase.Query("SELECT g.`player_class`, g.`player_spec`, g.`player_race`, g.`equipment_slot`, g.`item_entry`, g.`random_property` "
-            "FROM `mod_boost_green_gear` AS g LEFT JOIN `item_template` AS it ON it.`entry` = g.`item_entry` "
+            "FROM `mod_boost_bis_gear` AS g LEFT JOIN `item_template` AS it ON it.`entry` = g.`item_entry` "
             "LEFT JOIN `item_enchantment_template` AS ench ON ench.`entry` = "
             "CASE WHEN g.`random_property` > 0 THEN it.`RandomProperty` ELSE it.`RandomSuffix` END "
             "AND ench.`ench` = ABS(g.`random_property`) AND ench.`chance` > 0 "
@@ -244,7 +244,7 @@ void LevelBoost::LoadGearContainer()
         gear.player_race = fields[2].Get<std::string>();
         gear.equipment_slot = fields[3].Get<uint8>();
         gear.item_entry = fields[4].Get<uint32>();
-        gear.random_property = useGreenGear ? fields[5].Get<int32>() : 0;
+        gear.random_property = useBisGear ? fields[5].Get<int32>() : 0;
         gearTemplateList.push_back(gear);
 
         ++count;
@@ -327,7 +327,7 @@ bool LevelBoost::TemplateExists(Player* player, std::string const& playerSpec)
 }
 
 
-void LevelBoost::ApplyGreenGearTemplate(Player* player, std::string const& playerSpec)
+void LevelBoost::ApplyBisGearTemplate(Player* player, std::string const& playerSpec)
 {
     std::string const playerClass = GetClassString(player);
     std::string const playerRace = GetRaceString(player);
@@ -344,7 +344,7 @@ void LevelBoost::ApplyGreenGearTemplate(Player* player, std::string const& playe
                 continue;
             if (gear.equipment_slot >= EQUIPMENT_SLOT_END)
             {
-                LOG_WARN("module", "Ignoring invalid green gear slot {} for {} / {} / {}.", gear.equipment_slot, playerClass, playerSpec, playerRace);
+                LOG_WARN("module", "Ignoring invalid BiS gear slot {} for {} / {} / {}.", gear.equipment_slot, playerClass, playerSpec, playerRace);
                 continue;
             }
 
@@ -356,7 +356,7 @@ void LevelBoost::ApplyGreenGearTemplate(Player* player, std::string const& playe
 
             ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(gear.item_entry);
             if (!itemTemplate || IsIgnoredGearItem(gear.item_entry, itemTemplate) ||
-                itemTemplate->Quality != ITEM_QUALITY_UNCOMMON || LevelBoostInternal::HasProfessionSkillRequirement(itemTemplate) ||
+                LevelBoostInternal::HasProfessionSkillRequirement(itemTemplate) ||
                 !LevelBoostInternal::IsItemUsableForBoost(player, itemTemplate, player->GetLevel()))
                 continue;
 
@@ -378,7 +378,7 @@ void LevelBoost::ApplyGreenGearTemplate(Player* player, std::string const& playe
             if ((gear.random_property && !validProperty && !validSuffix) ||
                 (!gear.random_property && (itemTemplate->RandomProperty || itemTemplate->RandomSuffix)))
             {
-                LOG_WARN("module", "Skipping green gear item {} for {} because its configured random property is missing or invalid.",
+                LOG_WARN("module", "Skipping BiS gear item {} for {} because its configured random property is missing or invalid.",
                     gear.item_entry, player->GetName());
                 continue;
             }
@@ -387,7 +387,7 @@ void LevelBoost::ApplyGreenGearTemplate(Player* player, std::string const& playe
             InventoryResult const equipResult = player->CanEquipNewItem(gear.equipment_slot, destination, gear.item_entry, false);
             if (equipResult != EQUIP_ERR_OK)
             {
-                LOG_WARN("module", "Skipping green gear item {} for {} in slot {} because it cannot be equipped (result {}).",
+                LOG_WARN("module", "Skipping BiS gear item {} for {} in slot {} because it cannot be equipped (result {}).",
                     gear.item_entry, player->GetName(), gear.equipment_slot, static_cast<uint32>(equipResult));
                 continue;
             }
@@ -412,9 +412,9 @@ void LevelBoost::ApplyGreenGearTemplate(Player* player, std::string const& playe
 
 void LevelBoost::ApplyGearTemplate(Player* player, std::string const& playerSpec)
 {
-    if (useGreenGear)
+    if (useBisGear)
     {
-        ApplyGreenGearTemplate(player, playerSpec);
+        ApplyBisGearTemplate(player, playerSpec);
         return;
     }
 
@@ -670,11 +670,11 @@ void LevelBoost::ApplyTalentTemplate(Player* player, std::string const& playerSp
 
 void LevelBoost::ExtractGearTemplate(Player* player, std::string player_spec)
 {
-    if (useGreenGear)
+    if (useBisGear)
     {
-        WorldDatabase.DirectExecute("INSERT IGNORE INTO mod_boost_green_overrides (player_class, player_spec, player_race) VALUES ('{}', '{}', '{}')",
+        WorldDatabase.DirectExecute("INSERT IGNORE INTO mod_boost_bis_overrides (player_class, player_spec, player_race) VALUES ('{}', '{}', '{}')",
             GetClassString(player), player_spec, GetRaceString(player));
-        WorldDatabase.DirectExecute("DELETE FROM mod_boost_green_gear WHERE player_class = '{}' AND player_spec = '{}' AND player_race = '{}'",
+        WorldDatabase.DirectExecute("DELETE FROM mod_boost_bis_gear WHERE player_class = '{}' AND player_spec = '{}' AND player_race = '{}'",
             GetClassString(player), player_spec, GetRaceString(player));
 
         for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
@@ -682,11 +682,11 @@ void LevelBoost::ExtractGearTemplate(Player* player, std::string player_spec)
             if (slot == EQUIPMENT_SLOT_BODY || slot == EQUIPMENT_SLOT_TRINKET1 || slot == EQUIPMENT_SLOT_TRINKET2)
                 continue;
             Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-            if (!item || !item->GetTemplate() || item->GetTemplate()->Quality != ITEM_QUALITY_UNCOMMON ||
+            if (!item || !item->GetTemplate() ||
                 IsIgnoredGearItem(item->GetEntry(), item->GetTemplate()))
                 continue;
 
-            WorldDatabase.DirectExecute("INSERT INTO mod_boost_green_gear (player_class, player_spec, player_race, equipment_slot, item_entry, random_property) VALUES ('{}', '{}', '{}', {}, {}, {})",
+            WorldDatabase.DirectExecute("INSERT INTO mod_boost_bis_gear (player_class, player_spec, player_race, equipment_slot, item_entry, random_property) VALUES ('{}', '{}', '{}', {}, {}, {})",
                 GetClassString(player), player_spec, GetRaceString(player), slot, item->GetEntry(), item->GetItemRandomPropertyId());
         }
         return;

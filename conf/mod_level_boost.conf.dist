@@ -87,9 +87,9 @@ ClassItems.Enable = 1
 
 #
 #    Gear.Random.Enable
-#        Description: Uses the original random gear templates instead of the ranked level-15 green templates.
+#        Description: Uses the original random gear templates instead of the ranked level-15 BiS templates.
 #                     The original template seed ranks eligible items by quality and item level. Restart or reload the server config after changing it.
-#        Default:     0 - Ranked green gear
+#        Default:     0 - Ranked BiS gear
 #                     1 - Random gear templates
 #
 

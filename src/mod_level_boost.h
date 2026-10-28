@@ -119,7 +119,7 @@ public:
     GlyphTemplateContainer glyphTemplateList;
 
     bool levelBoost, oneTimeOnly, dualSpec, learnSpells, LearnProficiencies, learnTalents, learnGlyphs, destroyGear;
-    bool completeClassQuests, grantClassQuestItems, giveClassItems, giveBags, useGreenGear;
+    bool completeClassQuests, grantClassQuestItems, giveClassItems, giveBags, useBisGear;
     uint32 boostLevel = 15;
     uint32 startingGold = 100;
     uint32 starterBagItem = 4240;
@@ -148,7 +148,7 @@ public:
     bool TemplateExists(Player* player, std::string const& playerSpec);
     bool ApplyFullTemplate(Player* player, std::string const& playerSpec);
     void ApplyGearTemplate(Player* player, std::string const& playerSpec);
-    void ApplyGreenGearTemplate(Player* player, std::string const& playerSpec);
+    void ApplyBisGearTemplate(Player* player, std::string const& playerSpec);
     void ApplyTalentTemplate(Player* player, std::string const& playerSpec);
     void ApplyGlyphTemplate(Player* player, std::string const& playerSpec);
     void ExtractTemplates(Player* player, std::string player_spec);

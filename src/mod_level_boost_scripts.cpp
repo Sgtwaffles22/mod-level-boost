@@ -288,14 +288,14 @@ public:
         sLevelBoost->completeClassQuests = sConfigMgr->GetOption<bool>("ClassQuests.Enable", true);
         sLevelBoost->grantClassQuestItems = sConfigMgr->GetOption<bool>("ClassQuests.GrantItems", true);
         sLevelBoost->giveClassItems = sConfigMgr->GetOption<bool>("ClassItems.Enable", true);
-        sLevelBoost->useGreenGear = !sConfigMgr->GetOption<bool>("Gear.Random.Enable", false);
+        sLevelBoost->useBisGear = !sConfigMgr->GetOption<bool>("Gear.Random.Enable", false);
 
         LOG_INFO("module", ">> Class spell learning is {}.", sLevelBoost->learnSpells ? "enabled" : "disabled");
         LOG_INFO("module", ">> Class quest completion is {}; quest item rewards are {}; class item grants are {}.",
             sLevelBoost->completeClassQuests ? "enabled" : "disabled",
             sLevelBoost->grantClassQuestItems ? "enabled" : "disabled",
             sLevelBoost->giveClassItems ? "enabled" : "disabled");
-        LOG_INFO("module", ">> Gear template mode: {}.", sLevelBoost->useGreenGear ? "ranked green gear" : "random gear");
+        LOG_INFO("module", ">> Gear template mode: {}.", sLevelBoost->useBisGear ? "ranked BiS gear" : "random gear");
         LOG_INFO("module", ">> Loaded Level Boost Config in {} ms.", GetMSTimeDiffToNow(oldTime));
     }
 };
@@ -412,15 +412,10 @@ public:
                 handler->PSendSysMessage("Item {} requires level {}, above the configured boost level {}.", gear.item_entry, item->RequiredLevel, targetLevel);
                 ++warnings;
             }
-            if (sLevelBoost->useGreenGear && item->Quality != ITEM_QUALITY_UNCOMMON)
-            {
-                handler->PSendSysMessage("Item {} is not green quality and will be skipped in green gear mode.", gear.item_entry);
-                ++warnings;
-            }
             if (LevelBoostInternal::HasProfessionSkillRequirement(item))
             {
-                if (sLevelBoost->useGreenGear)
-                    handler->PSendSysMessage("Item {} requires profession skill {} rank {}; green gear mode will skip it.",
+                if (sLevelBoost->useBisGear)
+                    handler->PSendSysMessage("Item {} requires profession skill {} rank {}; BiS gear mode will skip it.",
                         gear.item_entry, item->RequiredSkill, item->RequiredSkillRank);
                 else
                     handler->PSendSysMessage("Item {} requires profession skill {} rank {}; the boost will substitute matching gear when possible.",
