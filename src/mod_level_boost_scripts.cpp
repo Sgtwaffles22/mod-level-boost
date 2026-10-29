@@ -143,26 +143,21 @@ public:
         if (!sLevelBoost->levelBoost)
             return false;
 
-        if (sLevelBoost->HasBoostClaim(player))
+        bool const hasClaim = sLevelBoost->HasAnyBoostClaim(player);
+        if (hasClaim && (sLevelBoost->oneTimeOnly || player->GetLevel() != 1))
         {
             if (creature->IsQuestGiver())
                 player->PrepareQuestMenu(creature->GetGUID());
 
-            if (!sLevelBoost->completeClassQuests && !sLevelBoost->learnSpells)
+            if (HomeCity const* city = GetHomeCity(player->getRace()))
             {
-                if (!player->PlayerTalkClass->GetQuestMenu().Empty())
-                {
-                    player->SendPreparedQuest(creature->GetGUID());
-                    return true;
-                }
-
-                player->GetSession()->SendAreaTriggerMessage("This character has already claimed a level boost.");
-                return false;
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, std::string("Yes, take me to ") + city->name + ".", GOSSIP_SENDER_MAIN, GOSSIP_TELEPORT_CITY);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "No, I will stay here.", GOSSIP_SENDER_MAIN, GOSSIP_STAY_HERE);
+                SendGossipMenuFor(player, city->textId, creature->GetGUID());
+                return true;
             }
 
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Update eligible class quests and missing spells", GOSSIP_SENDER_MAIN, GOSSIP_RECHECK_BOOST);
-            SendGossipMenuFor(player, BOOST_TEXT, creature->GetGUID());
-            return true;
+            return false;
         }
 
         if (player->GetLevel() != 1)
@@ -172,6 +167,9 @@ public:
             player->PrepareQuestMenu(creature->GetGUID());
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Tell me about the level boost...", GOSSIP_SENDER_MAIN, GOSSIP_LEVEL_BOOST);
+        if (hasClaim)
+            if (HomeCity const* city = GetHomeCity(player->getRace()))
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, std::string("Take me to ") + city->name + ".", GOSSIP_SENDER_MAIN, GOSSIP_TELEPORT_CITY);
 
         switch (player->getRace())
         {
@@ -227,12 +225,6 @@ public:
 
         if (sLevelBoost->HasBoostClaim(player))
         {
-            if (action == GOSSIP_RECHECK_BOOST)
-            {
-                sLevelBoost->HandleBoost(player, creature, "");
-                return true;
-            }
-
             if (action == GOSSIP_MAIN_MENU)
                 return OnGossipHello(player, creature);
 

@@ -13,7 +13,7 @@
 LevelBoost.Enable = 1
 
 # LevelBoost.OneTimeOnly
-# Prevents a character from claiming the boost more than once. Requires the character SQL table.
+# Prevents a character from claiming the boost more than once. The character SQL table also records boosts when this is disabled, so the city teleport can be offered again.
 # Default: 1
 LevelBoost.OneTimeOnly = 1
 

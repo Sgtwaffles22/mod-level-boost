@@ -27,7 +27,6 @@ enum GossipId
 {
     GOSSIP_MAIN_MENU = 0,
     GOSSIP_LEVEL_BOOST = 1,
-    GOSSIP_RECHECK_BOOST = 2,
     GOSSIP_TELEPORT_CITY = 3,
     GOSSIP_STAY_HERE = 4,
     GOSSIP_GEAR = 100,
@@ -135,6 +134,7 @@ public:
     uint32 GetTargetLevel() const;
     uint32 GetMoneyToGrant(Player* player) const;
     bool HasBoostClaim(Player* player);
+    bool HasAnyBoostClaim(Player* player);
     void RecordBoostClaim(Player* player, uint32 targetLevel);
     ClassQuestPlan BuildClassQuestPlan(Player* player, uint32 targetLevel) const;
     void CompleteClassQuests(Player* player, ClassQuestPlan const& plan);

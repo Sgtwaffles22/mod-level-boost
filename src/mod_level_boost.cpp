@@ -212,27 +212,7 @@ bool LevelBoost::HandleBoost(Player* player, Creature* creature, std::string con
 {
     if (oneTimeOnly && HasBoostClaim(player))
     {
-        bool recheckedBoostRewards = false;
-        if (completeClassQuests)
-        {
-            ClassQuestPlan const questPlan = BuildClassQuestPlan(player, GetTargetLevel());
-            CompleteClassQuests(player, questPlan);
-            recheckedBoostRewards = true;
-        }
-
-        if (learnSpells)
-        {
-            LearnSpellsForLevel(player);
-            recheckedBoostRewards = true;
-        }
-
-        if (recheckedBoostRewards)
-        {
-            player->SaveToDB(false, false);
-            player->GetSession()->SendAreaTriggerMessage("This character already claimed the boost. Configured class quest actions and missing class spells were checked.");
-        }
-        else
-            player->GetSession()->SendAreaTriggerMessage("This character has already claimed a level boost.");
+        player->GetSession()->SendAreaTriggerMessage("This character has already claimed a level boost.");
         return false;
     }
 
@@ -269,8 +249,7 @@ bool LevelBoost::HandleBoost(Player* player, Creature* creature, std::string con
         AddClassItems(player);
     player->UpdateSkillsToMaxSkillsForLevel();
 
-    if (oneTimeOnly)
-        RecordBoostClaim(player, GetTargetLevel());
+    RecordBoostClaim(player, GetTargetLevel());
 
     player->SaveToDB(false, false);
     CloseGossipMenuFor(player);
@@ -389,9 +368,11 @@ uint32 LevelBoost::GetMoneyToGrant(Player* player) const
 
 bool LevelBoost::HasBoostClaim(Player* player)
 {
-    if (!oneTimeOnly)
-        return false;
+    return oneTimeOnly && HasAnyBoostClaim(player);
+}
 
+bool LevelBoost::HasAnyBoostClaim(Player* player)
+{
     // Ignore stale claim rows when a deleted character's GUID is reused for a new character.
     QueryResult result = CharacterDatabase.Query(
         "SELECT 1 FROM mod_level_boost_claim WHERE guid = {} AND boosted_level <= {}",
@@ -401,7 +382,7 @@ bool LevelBoost::HasBoostClaim(Player* player)
 
 void LevelBoost::RecordBoostClaim(Player* player, uint32 targetLevel)
 {
-    CharacterDatabase.Execute(
+    CharacterDatabase.DirectExecute(
         "INSERT INTO mod_level_boost_claim (guid, boosted_level, claim_time) VALUES ({}, {}, UNIX_TIMESTAMP()) "
         "ON DUPLICATE KEY UPDATE boosted_level = VALUES(boosted_level), claim_time = VALUES(claim_time)",
         player->GetGUID().GetCounter(), targetLevel);

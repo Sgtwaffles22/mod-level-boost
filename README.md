@@ -12,7 +12,7 @@ Place this module in your AzerothCore checkout's `modules` directory and build A
 
 - SQL in `data/sql/db-world/` creates and seeds the spell, proficiency, gear, talent, and glyph templates; configures the supported starting NPCs; and registers the `.levelboost reload` command.
 - The world updates also create `mod_boost_bis_gear`, the default level-15 ranked BiS gear templates. The original templates remain available as Random Gear.
-- SQL in `data/sql/db-characters/` creates the claim table used when `LevelBoost.OneTimeOnly = 1`.
+- SQL in `data/sql/db-characters/` creates the claim table used to track boosts and offer the city teleport again.
 
 The database updater tracks applied SQL. Several template seed files drop and recreate their tables, so editing an already-applied seed file can cause custom or extracted template data to be replaced when the updater reapplies it.
 
@@ -51,7 +51,7 @@ DestroyGear.Enable = 1
 - `LearnTalents.Enable` applies the selected specialization's talent template. `LearnGlyphs.Enable` applies its glyph template when the character has unlocked the slot.
 - `DualSpec.Enable` defaults to `0` (disabled). `DestroyGear.Enable` defaults to `1`; when enabled, the boost removes the character's equipped gear before applying the new gear. If disabled, existing equipped items are kept, so occupied slots may keep their current item.
 
-With `LevelBoost.OneTimeOnly = 1`, each character can claim the boost once. If class-quest completion or spell learning is enabled, the NPC offers an update option to recheck eligible quests and missing class spells for a character that already claimed the boost. Set the option to `0` to allow repeat claims.
+With `LevelBoost.OneTimeOnly = 1`, each character can claim the boost once. Set it to `0` to allow another claim while the character is eligible for the boost. Boost claims are recorded in either mode so that the city teleport option remains available afterward.
 
 ## Starter templates
 
@@ -67,7 +67,7 @@ Changing `LevelBoost.Level` does not regenerate the starter templates. To custom
 
 Talk to a supported starting-area NPC with a level-1 character, choose the boost option, then select a specialization. The boost is applied immediately.
 
-After a successful boost, the NPC asks whether you would like to teleport to your race's capital city. Choose the city to travel there, or choose to stay in the starting area. This does not change your hearthstone's home location.
+After a successful boost, the NPC asks whether you would like to teleport to your race's capital city. Choose the city to travel there, or choose to stay in the starting area. If you close the dialogue, speak to the starting NPC again to use the teleport option. This does not change your hearthstone's home location.
 
 ## Commands
 
