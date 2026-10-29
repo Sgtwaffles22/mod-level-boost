@@ -28,6 +28,8 @@ enum GossipId
     GOSSIP_MAIN_MENU = 0,
     GOSSIP_LEVEL_BOOST = 1,
     GOSSIP_RECHECK_BOOST = 2,
+    GOSSIP_TELEPORT_CITY = 3,
+    GOSSIP_STAY_HERE = 4,
     GOSSIP_GEAR = 100,
     GOSSIP_RESET_TALENTS = 999
 };
@@ -143,7 +145,7 @@ public:
     void AddStarterBags(Player* player);
     void LearnSpellsForLevel(Player* player);
     void LearnProficienciesForLevel(Player* Player);
-    void HandleBoost(Player* player, Creature* creature, std::string const& playerSpec);
+    bool HandleBoost(Player* player, Creature* creature, std::string const& playerSpec);
     void CreateHunterPet(Player* player, Creature* creature, uint32 entry);
     bool TemplateExists(Player* player, std::string const& playerSpec);
     bool ApplyFullTemplate(Player* player, std::string const& playerSpec);

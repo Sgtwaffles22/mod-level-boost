@@ -67,6 +67,8 @@ Changing `LevelBoost.Level` does not regenerate the starter templates. To custom
 
 Talk to a supported starting-area NPC with a level-1 character, choose the boost option, then select a specialization. The boost is applied immediately.
 
+After a successful boost, the NPC asks whether you would like to teleport to your race's capital city. Choose the city to travel there, or choose to stay in the starting area. This does not change your hearthstone's home location.
+
 ## Commands
 
 - `.levelboost reload` reloads gear, talent, glyph, spell, and proficiency templates from the world database. Use it after changing those database tables; it does not reload the config file.

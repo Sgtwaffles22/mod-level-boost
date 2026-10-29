@@ -208,7 +208,7 @@ void LevelBoost::CreateHunterPet(Player* player, Creature* creature, uint32 entr
 }
 
 
-void LevelBoost::HandleBoost(Player* player, Creature* creature, std::string const& playerSpec)
+bool LevelBoost::HandleBoost(Player* player, Creature* creature, std::string const& playerSpec)
 {
     if (oneTimeOnly && HasBoostClaim(player))
     {
@@ -233,11 +233,11 @@ void LevelBoost::HandleBoost(Player* player, Creature* creature, std::string con
         }
         else
             player->GetSession()->SendAreaTriggerMessage("This character has already claimed a level boost.");
-        return;
+        return false;
     }
 
     if (!ApplyFullTemplate(player, playerSpec))
-        return;
+        return false;
 
     switch (player->getRace())
     {
@@ -275,6 +275,7 @@ void LevelBoost::HandleBoost(Player* player, Creature* creature, std::string con
     player->SaveToDB(false, false);
     CloseGossipMenuFor(player);
     player->SendTalentsInfoData(false);
+    return true;
 }
 
 std::string LevelBoost::GetClassString(Player* player)

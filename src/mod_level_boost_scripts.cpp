@@ -4,6 +4,42 @@
 
 namespace
 {
+struct HomeCity
+{
+    char const* name;
+    uint32 textId;
+    uint32 map;
+    float x, y, z, orientation;
+};
+
+HomeCity const* GetHomeCity(uint8 race)
+{
+    // Locations match the core's game_tele city destinations.
+    static HomeCity const stormwind = { "Stormwind", 70001, 0, -8833.38f, 628.628f, 94.0066f, 1.06535f };
+    static HomeCity const ironforge = { "Ironforge", 70002, 0, -4918.88f, -940.406f, 501.564f, 5.42347f };
+    static HomeCity const darnassus = { "Darnassus", 70003, 1, 9949.56f, 2284.21f, 1341.4f, 1.59587f };
+    static HomeCity const exodar = { "The Exodar", 70004, 530, -3965.7f, -11653.6f, -138.844f, 0.852154f };
+    static HomeCity const orgrimmar = { "Orgrimmar", 70005, 1, 1629.85f, -4373.64f, 31.5573f, 3.69762f };
+    static HomeCity const thunderBluff = { "Thunder Bluff", 70006, 1, -1277.37f, 124.804f, 131.287f, 5.22274f };
+    static HomeCity const undercity = { "Undercity", 70007, 0, 1584.14f, 240.308f, -52.1534f, 0.041793f };
+    static HomeCity const silvermoon = { "Silvermoon City", 70008, 530, 9487.69f, -7279.2f, 14.2866f, 6.16478f };
+
+    switch (race)
+    {
+        case RACE_HUMAN: return &stormwind;
+        case RACE_DWARF:
+        case RACE_GNOME: return &ironforge;
+        case RACE_NIGHTELF: return &darnassus;
+        case RACE_DRAENEI: return &exodar;
+        case RACE_ORC:
+        case RACE_TROLL: return &orgrimmar;
+        case RACE_TAUREN: return &thunderBluff;
+        case RACE_UNDEAD_PLAYER: return &undercity;
+        case RACE_BLOODELF: return &silvermoon;
+        default: return nullptr;
+    }
+}
+
 struct SpecializationOption
 {
     uint8 id;
@@ -177,6 +213,18 @@ public:
         if (!sLevelBoost->levelBoost || sender != GOSSIP_SENDER_MAIN)
             return false;
 
+        if (action == GOSSIP_TELEPORT_CITY || action == GOSSIP_STAY_HERE)
+        {
+            CloseGossipMenuFor(player);
+            if (action == GOSSIP_TELEPORT_CITY)
+            {
+                HomeCity const* city = GetHomeCity(player->getRace());
+                if (!city || !player->TeleportTo(city->map, city->x, city->y, city->z, city->orientation))
+                    player->GetSession()->SendAreaTriggerMessage("Unable to teleport to that city.");
+            }
+            return true;
+        }
+
         if (sLevelBoost->HasBoostClaim(player))
         {
             if (action == GOSSIP_RECHECK_BOOST)
@@ -211,7 +259,16 @@ public:
             if (!option || option->classId != player->getClass())
                 return false;
 
-            sLevelBoost->HandleBoost(player, creature, option->specName);
+            if (sLevelBoost->HandleBoost(player, creature, option->specName))
+            {
+                if (HomeCity const* city = GetHomeCity(player->getRace()))
+                {
+                    ClearGossipMenuFor(player);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, std::string("Yes, take me to ") + city->name + ".", GOSSIP_SENDER_MAIN, GOSSIP_TELEPORT_CITY);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "No, I will stay here.", GOSSIP_SENDER_MAIN, GOSSIP_STAY_HERE);
+                    SendGossipMenuFor(player, city->textId, creature->GetGUID());
+                }
+            }
             return true;
         }
 
